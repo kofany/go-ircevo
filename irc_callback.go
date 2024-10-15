@@ -232,33 +232,35 @@ func (irc *Connection) setupCallbacks() {
 	// work. It has to be set somewhere first in case the nick is already
 	// taken or unavailable from the beginning.
 	irc.AddCallback("437", func(e *Event) {
-		// If irc.nickcurrent hasn't been set yet, set to irc.nick
-		if irc.nickcurrent == "" {
-			irc.nickcurrent = irc.nick
+		irc.Lock()
+		defer irc.Unlock()
+		if !irc.fully_connected {
+			if irc.nickcurrent == "" {
+				irc.nickcurrent = irc.nick
+			}
+			if len(irc.nickcurrent) > 8 {
+				irc.nickcurrent = "_" + irc.nickcurrent
+			} else {
+				irc.nickcurrent = irc.nickcurrent + "_"
+			}
+			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
-
-		if len(irc.nickcurrent) > 8 {
-			irc.nickcurrent = "_" + irc.nickcurrent
-		} else {
-			irc.nickcurrent = irc.nickcurrent + "_"
-		}
-		irc.SendRawf("NICK %s", irc.nickcurrent)
 	})
 
-	// 433: ERR_NICKNAMEINUSE "<nick> :Nickname is already in use"
-	// Add a _ to current nick.
 	irc.AddCallback("433", func(e *Event) {
-		// If irc.nickcurrent hasn't been set yet, set to irc.nick
-		if irc.nickcurrent == "" {
-			irc.nickcurrent = irc.nick
+		irc.Lock()
+		defer irc.Unlock()
+		if !irc.fully_connected {
+			if irc.nickcurrent == "" {
+				irc.nickcurrent = irc.nick
+			}
+			if len(irc.nickcurrent) > 8 {
+				irc.nickcurrent = "_" + irc.nickcurrent
+			} else {
+				irc.nickcurrent = irc.nickcurrent + "_"
+			}
+			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
-
-		if len(irc.nickcurrent) > 8 {
-			irc.nickcurrent = "_" + irc.nickcurrent
-		} else {
-			irc.nickcurrent = irc.nickcurrent + "_"
-		}
-		irc.SendRawf("NICK %s", irc.nickcurrent)
 	})
 
 	irc.AddCallback("PONG", func(e *Event) {
@@ -282,6 +284,7 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("001", func(e *Event) {
 		irc.Lock()
 		irc.nickcurrent = e.Arguments[0]
+		irc.fully_connected = true
 		irc.Unlock()
 	})
 }

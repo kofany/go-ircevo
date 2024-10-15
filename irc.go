@@ -40,6 +40,7 @@ const (
 )
 
 const CAP_TIMEOUT = time.Second * 15
+
 var ErrDisconnected = errors.New("Disconnect Called")
 
 // Read data from a connection. To be used as a goroutine.
@@ -102,7 +103,7 @@ func unescapeTagValue(value string) string {
 	return value
 }
 
-//Parse raw irc messages
+// Parse raw irc messages
 func parseToEvent(msg string) (*Event, error) {
 	msg = strings.TrimSuffix(msg, "\n") //Remove \r\n
 	msg = strings.TrimSuffix(msg, "\r")
@@ -396,6 +397,7 @@ func (irc *Connection) Connected() bool {
 // stops all goroutines and then closes the socket.
 func (irc *Connection) Disconnect() {
 	irc.Lock()
+	irc.fully_connected = false
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -418,6 +420,9 @@ func (irc *Connection) Disconnect() {
 
 // Reconnect to a server using the current connection.
 func (irc *Connection) Reconnect() error {
+	irc.Lock()
+	irc.fully_connected = false
+	irc.Unlock()
 	irc.end = make(chan struct{})
 	return irc.Connect(irc.Server)
 }
@@ -461,11 +466,11 @@ func (irc *Connection) Connect(server string) error {
 		return errors.New("empty 'user'")
 	}
 
-	dialer := proxy.FromEnvironmentUsing(&net.Dialer{ LocalAddr: &net.TCPAddr{
-        IP:   net.ParseIP(irc.myhost),
-        Port: 0,
-    	},Timeout: irc.Timeout})
-	
+	dialer := proxy.FromEnvironmentUsing(&net.Dialer{LocalAddr: &net.TCPAddr{
+		IP:   net.ParseIP(irc.myhost),
+		Port: 0,
+	}, Timeout: irc.Timeout})
+
 	irc.socket, err = dialer.Dial("tcp", irc.Server)
 	if err != nil {
 		return err
@@ -617,18 +622,19 @@ func IRC(nick, user string, myhost string) *Connection {
 	}
 
 	irc := &Connection{
-		nick:        nick,
-		nickcurrent: nick,
-		user:        user,
-		myhost:      myhost,
-		Log:         log.New(os.Stdout, "", log.LstdFlags),
-		end:         make(chan struct{}),
-		Version:     VERSION,
-		KeepAlive:   4 * time.Minute,
-		Timeout:     1 * time.Minute,
-		PingFreq:    15 * time.Minute,
-		SASLMech:    "PLAIN",
-		QuitMessage: "",
+		nick:            nick,
+		nickcurrent:     nick,
+		user:            user,
+		myhost:          myhost,
+		Log:             log.New(os.Stdout, "", log.LstdFlags),
+		end:             make(chan struct{}),
+		Version:         VERSION,
+		KeepAlive:       4 * time.Minute,
+		Timeout:         1 * time.Minute,
+		PingFreq:        15 * time.Minute,
+		SASLMech:        "PLAIN",
+		fully_connected: false,
+		QuitMessage:     "",
 	}
 	irc.setupCallbacks()
 	return irc

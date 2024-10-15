@@ -27,6 +27,7 @@ func TestConnectionSASL(t *testing.T) {
 	irccon.SASLLogin = SASLLogin
 	irccon.SASLPassword = SASLPassword
 	irccon.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+	irccon.fully_connected = false
 	irccon.AddCallback("001", func(e *Event) { irccon.Join("#go-eventirc") })
 
 	irccon.AddCallback("366", func(e *Event) {
@@ -42,11 +43,10 @@ func TestConnectionSASL(t *testing.T) {
 	irccon.Loop()
 }
 
-
-// 1. Register fingerprint with IRC network
-// 2. Add SASLKeyPem="-----BEGIN PRIVATE KEY-----..."
-//    and SASLCertPem="-----BEGIN CERTIFICATE-----..."
-//    to CI environment as masked variables
+//  1. Register fingerprint with IRC network
+//  2. Add SASLKeyPem="-----BEGIN PRIVATE KEY-----..."
+//     and SASLCertPem="-----BEGIN CERTIFICATE-----..."
+//     to CI environment as masked variables
 func TestConnectionSASLExternal(t *testing.T) {
 	SASLServer := "irc.freenode.net:7000"
 	keyPem := os.Getenv("SASLKeyPem")
@@ -71,8 +71,9 @@ func TestConnectionSASLExternal(t *testing.T) {
 	irccon.SASLMech = "EXTERNAL"
 	irccon.TLSConfig = &tls.Config{
 		InsecureSkipVerify: true,
-		Certificates: []tls.Certificate{cert},
+		Certificates:       []tls.Certificate{cert},
 	}
+	irccon.fully_connected = false
 	irccon.AddCallback("001", func(e *Event) { irccon.Join("#go-eventirc") })
 
 	irccon.AddCallback("366", func(e *Event) {
