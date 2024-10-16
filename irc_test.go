@@ -13,12 +13,13 @@ const serverssl = "irc.freenode.net:7000"
 const channel = "#go-eventirc-test"
 const dict = "abcdefghijklmnopqrstuvwxyz"
 
-//Spammy
+// Spammy
 const verbose_tests = false
 const debug_tests = true
+const vhost = "0.0.0.0"
 
 func TestConnectionEmtpyServer(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	err := irccon.Connect("")
 	if err == nil {
 		t.Fatal("emtpy server string not detected")
@@ -26,7 +27,7 @@ func TestConnectionEmtpyServer(t *testing.T) {
 }
 
 func TestConnectionDoubleColon(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	err := irccon.Connect("::")
 	if err == nil {
 		t.Fatal("wrong number of ':' not detected")
@@ -34,7 +35,7 @@ func TestConnectionDoubleColon(t *testing.T) {
 }
 
 func TestConnectionMissingHost(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	err := irccon.Connect(":6667")
 	if err == nil {
 		t.Fatal("missing host not detected")
@@ -42,7 +43,7 @@ func TestConnectionMissingHost(t *testing.T) {
 }
 
 func TestConnectionMissingPort(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	err := irccon.Connect("chat.freenode.net:")
 	if err == nil {
 		t.Fatal("missing port not detected")
@@ -50,7 +51,7 @@ func TestConnectionMissingPort(t *testing.T) {
 }
 
 func TestConnectionNegativePort(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	err := irccon.Connect("chat.freenode.net:-1")
 	if err == nil {
 		t.Fatal("negative port number not detected")
@@ -58,7 +59,7 @@ func TestConnectionNegativePort(t *testing.T) {
 }
 
 func TestConnectionTooLargePort(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	err := irccon.Connect("chat.freenode.net:65536")
 	if err == nil {
 		t.Fatal("too large port number not detected")
@@ -66,7 +67,7 @@ func TestConnectionTooLargePort(t *testing.T) {
 }
 
 func TestConnectionMissingLog(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	irccon.Log = nil
 	err := irccon.Connect("chat.freenode.net:6667")
 	if err == nil {
@@ -75,7 +76,7 @@ func TestConnectionMissingLog(t *testing.T) {
 }
 
 func TestConnectionEmptyUser(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	// user may be changed after creation
 	irccon.user = ""
 	err := irccon.Connect("chat.freenode.net:6667")
@@ -85,7 +86,7 @@ func TestConnectionEmptyUser(t *testing.T) {
 }
 
 func TestConnectionEmptyNick(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	// nick may be changed after creation
 	irccon.nick = ""
 	err := irccon.Connect("chat.freenode.net:6667")
@@ -95,7 +96,7 @@ func TestConnectionEmptyNick(t *testing.T) {
 }
 
 func TestRemoveCallback(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	debugTest(irccon)
 
 	done := make(chan int, 10)
@@ -122,7 +123,7 @@ func TestRemoveCallback(t *testing.T) {
 }
 
 func TestWildcardCallback(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	debugTest(irccon)
 
 	done := make(chan int, 10)
@@ -145,7 +146,7 @@ func TestWildcardCallback(t *testing.T) {
 }
 
 func TestClearCallback(t *testing.T) {
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	debugTest(irccon)
 
 	done := make(chan int, 10)
@@ -170,17 +171,8 @@ func TestClearCallback(t *testing.T) {
 	}
 }
 
-func TestIRCemptyNick(t *testing.T) {
-	irccon := IRC("", "go-eventirc")
-	irccon = nil
-	if irccon != nil {
-		t.Error("empty nick didn't result in error")
-		t.Fail()
-	}
-}
-
 func TestIRCemptyUser(t *testing.T) {
-	irccon := IRC("go-eventirc", "")
+	irccon := IRC("go-eventirc", "", vhost)
 	if irccon != nil {
 		t.Error("empty user didn't result in error")
 	}
@@ -192,13 +184,13 @@ func TestConnection(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	ircnick1 := randStr(8)
 	ircnick2 := randStr(8)
-	irccon1 := IRC(ircnick1, "IRCTest1")
+	irccon1 := IRC(ircnick1, "IRCTest1", vhost)
 
 	irccon1.PingFreq = time.Second * 3
 
 	debugTest(irccon1)
 
-	irccon2 := IRC(ircnick2, "IRCTest2")
+	irccon2 := IRC(ircnick2, "IRCTest2", vhost)
 	debugTest(irccon2)
 
 	teststr := randStr(20)
@@ -274,7 +266,7 @@ func TestReconnect(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 	ircnick1 := randStr(8)
-	irccon := IRC(ircnick1, "IRCTestRe")
+	irccon := IRC(ircnick1, "IRCTestRe", vhost)
 	irccon.PingFreq = time.Second * 3
 	debugTest(irccon)
 
@@ -310,7 +302,7 @@ func TestConnectionSSL(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 	ircnick1 := randStr(8)
-	irccon := IRC(ircnick1, "IRCTestSSL")
+	irccon := IRC(ircnick1, "IRCTestSSL", vhost)
 	debugTest(irccon)
 	irccon.UseTLS = true
 	irccon.TLSConfig = &tls.Config{InsecureSkipVerify: true}

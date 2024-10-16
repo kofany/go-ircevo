@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/thoj/go-ircevent"
 	"crypto/tls"
 	"log"
 	"os"
+
+	irc "github.com/kofany/go-ircevent"
 )
 
 const addr = "libera75jm6of4wxpxt4aynol3xjmbtxgfyjpu34ss4d7r7q2v5zrpyd.onion:6697"
@@ -29,7 +30,8 @@ func main() {
 		log.Fatal(err)
 	}
 	ircnick1 := nick
-	irccon := irc.IRC(ircnick1, nick)
+	vhost := "0.0.0.0"
+	irccon := irc.IRC(ircnick1, nick, vhost)
 	irccon.VerboseCallbackHandler = true
 	irccon.UseSASL = true
 	irccon.SASLMech = "EXTERNAL"
@@ -37,7 +39,7 @@ func main() {
 	irccon.UseTLS = true
 	irccon.TLSConfig = &tls.Config{
 		InsecureSkipVerify: true,
-		Certificates: []tls.Certificate{clientCert},
+		Certificates:       []tls.Certificate{clientCert},
 	}
 	irccon.AddCallback("001", func(e *irc.Event) {})
 	irccon.AddCallback("376", func(e *irc.Event) {

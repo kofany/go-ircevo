@@ -263,6 +263,59 @@ func (irc *Connection) setupCallbacks() {
 		}
 	})
 
+	irc.AddCallback("431", func(e *Event) {
+		irc.Lock()
+		defer irc.Unlock()
+		if !irc.fully_connected {
+			if irc.nickcurrent == "" {
+				irc.nickcurrent = irc.nick
+			}
+			if len(irc.nickcurrent) > 8 {
+				irc.nickcurrent = "_" + irc.nickcurrent
+			} else {
+				irc.nickcurrent = irc.nickcurrent + "_"
+			}
+			irc.SendRawf("NICK %s", irc.nickcurrent)
+		}
+	})
+
+	irc.AddCallback("432", func(e *Event) {
+		irc.Lock()
+		defer irc.Unlock()
+		if !irc.fully_connected {
+			if irc.nickcurrent == "" {
+				irc.nickcurrent = irc.nick
+			}
+			// Dodajemy prefiks 'Err' aby spróbować inny pseudonim
+			irc.nickcurrent = "Err" + irc.nickcurrent
+			irc.SendRawf("NICK %s", irc.nickcurrent)
+		}
+	})
+
+	irc.AddCallback("436", func(e *Event) {
+		irc.Lock()
+		defer irc.Unlock()
+		if !irc.fully_connected {
+			if irc.nickcurrent == "" {
+				irc.nickcurrent = irc.nick
+			}
+			if len(irc.nickcurrent) > 8 {
+				irc.nickcurrent = "_" + irc.nickcurrent
+			} else {
+				irc.nickcurrent = irc.nickcurrent + "_"
+			}
+			irc.SendRawf("NICK %s", irc.nickcurrent)
+		}
+	})
+
+	irc.AddCallback("484", func(e *Event) {
+		irc.Lock()
+		defer irc.Unlock()
+		if !irc.fully_connected {
+			// Zachowaj obecny nick i nie podejmuj kolejnej próby zmiany
+		}
+	})
+
 	irc.AddCallback("PONG", func(e *Event) {
 		ns, _ := strconv.ParseInt(e.Message(), 10, 64)
 		delta := time.Duration(time.Now().UnixNano() - ns)

@@ -1,7 +1,7 @@
 // Copyright 2009 Thomas Jager <mail@jager.no>  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
+// release v0.1.2 by kofany
 /*
 This package provides an event based IRC client library. It allows to
 register callbacks for the events you need to handle. Its features
@@ -109,7 +109,7 @@ func parseToEvent(msg string) (*Event, error) {
 	msg = strings.TrimSuffix(msg, "\r")
 	event := &Event{Raw: msg}
 	if len(msg) < 5 {
-		return nil, errors.New("Malformed msg from server")
+		return nil, errors.New("malformed msg from server")
 	}
 
 	if msg[0] == '@' {
@@ -125,19 +125,18 @@ func parseToEvent(msg string) (*Event, error) {
 					event.Tags[parts[0]] = unescapeTagValue(parts[1])
 				}
 			}
-			msg = msg[i+1 : len(msg)]
+			msg = msg[i+1:]
 		} else {
-			return nil, errors.New("Malformed msg from server")
+			return nil, errors.New("malformed msg from server")
 		}
 	}
 
 	if msg[0] == ':' {
 		if i := strings.Index(msg, " "); i > -1 {
 			event.Source = msg[1:i]
-			msg = msg[i+1 : len(msg)]
-
+			msg = msg[i+1:]
 		} else {
-			return nil, errors.New("Malformed msg from server")
+			return nil, errors.New("malformed msg from server")
 		}
 
 		if i, j := strings.Index(event.Source, "!"), strings.Index(event.Source, "@"); i > -1 && j > -1 && i < j {
@@ -604,7 +603,7 @@ func (irc *Connection) negotiateCaps() error {
 		remaining_caps--
 	}
 
-	irc.pwrite <- fmt.Sprintf("CAP END\r\n")
+	irc.pwrite <- "CAP END\r\n"
 
 	return nil
 }

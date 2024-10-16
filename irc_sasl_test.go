@@ -12,14 +12,14 @@ func TestConnectionSASL(t *testing.T) {
 	SASLServer := "irc.freenode.net:7000"
 	SASLLogin := os.Getenv("SASLLogin")
 	SASLPassword := os.Getenv("SASLPassword")
-
+	vhost := "0.0.0.0"
 	if SASLLogin == "" {
 		t.Skip("Define SASLLogin and SASLPasword environment varables to test SASL")
 	}
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
-	irccon := IRC("go-eventirc", "go-eventirc")
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	irccon.VerboseCallbackHandler = true
 	irccon.Debug = true
 	irccon.UseTLS = true
@@ -62,8 +62,8 @@ func TestConnectionSASLExternal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SASL EXTERNAL cert creation failed: %s", err)
 	}
-
-	irccon := IRC("go-eventirc", "go-eventirc")
+	vhost := "0.0.0.0"
+	irccon := IRC("go-eventirc", "go-eventirc", vhost)
 	irccon.VerboseCallbackHandler = true
 	irccon.Debug = true
 	irccon.UseTLS = true
