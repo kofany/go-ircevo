@@ -38,7 +38,7 @@ type Connection struct {
 	KeepAlive        time.Duration
 	Server           string
 	Encoding         encoding.Encoding
-	fully_connected  bool
+	fullyConnected  bool
 
 	RealName string // The real name we want to display.
 	myhost   string //ip to pass
