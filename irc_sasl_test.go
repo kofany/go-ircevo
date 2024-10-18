@@ -12,14 +12,14 @@ func TestConnectionSASL(t *testing.T) {
 	SASLServer := "irc.freenode.net:7000"
 	SASLLogin := os.Getenv("SASLLogin")
 	SASLPassword := os.Getenv("SASLPassword")
-	vhost := "0.0.0.0"
+
 	if SASLLogin == "" {
 		t.Skip("Define SASLLogin and SASLPasword environment varables to test SASL")
 	}
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
-	irccon := IRC("go-eventirc", "go-eventirc", vhost)
+	irccon := IRC("go-eventirc", "go-eventirc")
 	irccon.VerboseCallbackHandler = true
 	irccon.Debug = true
 	irccon.UseTLS = true
@@ -27,7 +27,6 @@ func TestConnectionSASL(t *testing.T) {
 	irccon.SASLLogin = SASLLogin
 	irccon.SASLPassword = SASLPassword
 	irccon.TLSConfig = &tls.Config{InsecureSkipVerify: true}
-	irccon.fullyConnected = false
 	irccon.AddCallback("001", func(e *Event) { irccon.Join("#go-eventirc") })
 
 	irccon.AddCallback("366", func(e *Event) {
@@ -62,8 +61,8 @@ func TestConnectionSASLExternal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SASL EXTERNAL cert creation failed: %s", err)
 	}
-	vhost := "0.0.0.0"
-	irccon := IRC("go-eventirc", "go-eventirc", vhost)
+
+	irccon := IRC("go-eventirc", "go-eventirc")
 	irccon.VerboseCallbackHandler = true
 	irccon.Debug = true
 	irccon.UseTLS = true
@@ -73,7 +72,6 @@ func TestConnectionSASLExternal(t *testing.T) {
 		InsecureSkipVerify: true,
 		Certificates:       []tls.Certificate{cert},
 	}
-	irccon.fullyConnected = false
 	irccon.AddCallback("001", func(e *Event) { irccon.Join("#go-eventirc") })
 
 	irccon.AddCallback("366", func(e *Event) {

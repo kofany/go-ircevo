@@ -12,8 +12,7 @@ const serverssl = "irc.freenode.net:7000"
 
 func main() {
 	ircnick1 := "blatiblat"
-	vhost := "0.0.0.0"
-	irccon := irc.IRC(ircnick1, "IRCTestSSL", vhost)
+	irccon := irc.IRC(ircnick1, "IRCTestSSL")
 	irccon.VerboseCallbackHandler = true
 	irccon.Debug = true
 	irccon.UseTLS = true

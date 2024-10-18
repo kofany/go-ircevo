@@ -30,8 +30,7 @@ func main() {
 		log.Fatal(err)
 	}
 	ircnick1 := nick
-	vhost := "0.0.0.0"
-	irccon := irc.IRC(ircnick1, nick, vhost)
+	irccon := irc.IRC(ircnick1, nick)
 	irccon.VerboseCallbackHandler = true
 	irccon.UseSASL = true
 	irccon.SASLMech = "EXTERNAL"
