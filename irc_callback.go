@@ -158,7 +158,9 @@ func (irc *Connection) RunCallbacks(event *Event) {
 
 	event.Ctx = context.Background()
 	if irc.CallbackTimeout != 0 {
-		event.Ctx, _ = context.WithTimeout(event.Ctx, irc.CallbackTimeout)
+		var cancel context.CancelFunc
+		event.Ctx, cancel = context.WithTimeout(event.Ctx, irc.CallbackTimeout)
+		defer cancel() // Ensure cancel is called to avoid context leak
 	}
 
 	done := make(chan int)
@@ -234,15 +236,11 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("437", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
-		if !irc.fully_connected {
+		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
-			if len(irc.nickcurrent) > 8 {
-				irc.nickcurrent = "_" + irc.nickcurrent
-			} else {
-				irc.nickcurrent = irc.nickcurrent + "_"
-			}
+			irc.modifyNick()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -250,15 +248,11 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("433", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
-		if !irc.fully_connected {
+		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
-			if len(irc.nickcurrent) > 8 {
-				irc.nickcurrent = "_" + irc.nickcurrent
-			} else {
-				irc.nickcurrent = irc.nickcurrent + "_"
-			}
+			irc.modifyNick()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -266,15 +260,11 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("431", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
-		if !irc.fully_connected {
+		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
-			if len(irc.nickcurrent) > 8 {
-				irc.nickcurrent = "_" + irc.nickcurrent
-			} else {
-				irc.nickcurrent = irc.nickcurrent + "_"
-			}
+			irc.modifyNick()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -282,7 +272,7 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("432", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
-		if !irc.fully_connected {
+		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
@@ -295,15 +285,11 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("436", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
-		if !irc.fully_connected {
+		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
-			if len(irc.nickcurrent) > 8 {
-				irc.nickcurrent = "_" + irc.nickcurrent
-			} else {
-				irc.nickcurrent = irc.nickcurrent + "_"
-			}
+			irc.modifyNick()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -311,7 +297,7 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("484", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
-		if !irc.fully_connected {
+		if !irc.fullyConnected {
 			// Zachowaj obecny nick i nie podejmuj kolejnej próby zmiany
 		}
 	})
@@ -337,7 +323,16 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("001", func(e *Event) {
 		irc.Lock()
 		irc.nickcurrent = e.Arguments[0]
-		irc.fully_connected = true
+		irc.fullyConnected = true
 		irc.Unlock()
 	})
+}
+
+// Function to modify the current nick
+func (irc *Connection) modifyNick() {
+	if len(irc.nickcurrent) > 8 {
+		irc.nickcurrent = "_" + irc.nickcurrent
+	} else {
+		irc.nickcurrent = irc.nickcurrent + "_"
+	}
 }

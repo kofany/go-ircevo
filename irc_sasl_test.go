@@ -27,7 +27,7 @@ func TestConnectionSASL(t *testing.T) {
 	irccon.SASLLogin = SASLLogin
 	irccon.SASLPassword = SASLPassword
 	irccon.TLSConfig = &tls.Config{InsecureSkipVerify: true}
-	irccon.fully_connected = false
+	irccon.fullyConnected = false
 	irccon.AddCallback("001", func(e *Event) { irccon.Join("#go-eventirc") })
 
 	irccon.AddCallback("366", func(e *Event) {
@@ -73,7 +73,7 @@ func TestConnectionSASLExternal(t *testing.T) {
 		InsecureSkipVerify: true,
 		Certificates:       []tls.Certificate{cert},
 	}
-	irccon.fully_connected = false
+	irccon.fullyConnected = false
 	irccon.AddCallback("001", func(e *Event) { irccon.Join("#go-eventirc") })
 
 	irccon.AddCallback("366", func(e *Event) {

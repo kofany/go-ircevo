@@ -396,7 +396,7 @@ func (irc *Connection) Connected() bool {
 // stops all goroutines and then closes the socket.
 func (irc *Connection) Disconnect() {
 	irc.Lock()
-	irc.fully_connected = false
+	irc.fullyConnected = false
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -420,7 +420,7 @@ func (irc *Connection) Disconnect() {
 // Reconnect to a server using the current connection.
 func (irc *Connection) Reconnect() error {
 	irc.Lock()
-	irc.fully_connected = false
+	irc.fullyConnected = false
 	irc.Unlock()
 	irc.end = make(chan struct{})
 	return irc.Connect(irc.Server)
@@ -466,7 +466,7 @@ func (irc *Connection) Connect(server string) error {
 	}
 
 	dialer := proxy.FromEnvironmentUsing(&net.Dialer{LocalAddr: &net.TCPAddr{
-		IP:   net.ParseIP(irc.myhost),
+		IP:   net.ParseIP(irc.host),
 		Port: 0,
 	}, Timeout: irc.Timeout})
 
@@ -611,7 +611,7 @@ func (irc *Connection) negotiateCaps() error {
 // Create a connection with the (publicly visible) nickname and username.
 // The nickname is later used to address the user. Returns nil if nick
 // or user are empty.
-func IRC(nick, user string, myhost string) *Connection {
+func IRC(nick, user string, host string) *Connection {
 	// catch invalid values
 	if len(nick) == 0 {
 		return nil
@@ -621,19 +621,19 @@ func IRC(nick, user string, myhost string) *Connection {
 	}
 
 	irc := &Connection{
-		nick:            nick,
-		nickcurrent:     nick,
-		user:            user,
-		myhost:          myhost,
-		Log:             log.New(os.Stdout, "", log.LstdFlags),
-		end:             make(chan struct{}),
-		Version:         VERSION,
-		KeepAlive:       4 * time.Minute,
-		Timeout:         1 * time.Minute,
-		PingFreq:        15 * time.Minute,
-		SASLMech:        "PLAIN",
-		fully_connected: false,
-		QuitMessage:     "",
+		nick:           nick,
+		nickcurrent:    nick,
+		user:           user,
+		host:           host,
+		Log:            log.New(os.Stdout, "", log.LstdFlags),
+		end:            make(chan struct{}),
+		Version:        VERSION,
+		KeepAlive:      4 * time.Minute,
+		Timeout:        1 * time.Minute,
+		PingFreq:       15 * time.Minute,
+		SASLMech:       "PLAIN",
+		fullyConnected: false,
+		QuitMessage:    "",
 	}
 	irc.setupCallbacks()
 	return irc
