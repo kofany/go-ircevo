@@ -641,7 +641,8 @@ func IRC(nick, user string) *Connection {
 		PingFreq:       15 * time.Minute,
 		SASLMech:       "PLAIN",
 		QuitMessage:    "",
-		fullyConnected: false, // Initialize to false
+		fullyConnected: false,           // Initialize to false
+		DCCManager:     NewDCCManager(), // DCC chat support
 	}
 	irc.setupCallbacks()
 	return irc
@@ -652,3 +653,5 @@ func IRC(nick, user string) *Connection {
 func (irc *Connection) SetLocalIP(ip string) {
 	irc.localIP = ip
 }
+
+// DCC

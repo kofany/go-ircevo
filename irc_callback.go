@@ -8,6 +8,7 @@ package irc
 
 import (
 	"context"
+	"net"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -334,6 +335,9 @@ func (irc *Connection) setupCallbacks() {
 		irc.fullyConnected = true
 		irc.Unlock()
 	})
+	// DCC Chat support
+	irc.addDCCChatCallback()
+
 }
 
 // modifyNick modifies the current nickname to try a different one.
@@ -343,4 +347,18 @@ func (irc *Connection) modifyNick() {
 	} else {
 		irc.nickcurrent = irc.nickcurrent + "_"
 	}
+}
+
+// DCC chat support
+func (irc *Connection) addDCCChatCallback() {
+	irc.AddCallback("CTCP_DCC", func(e *Event) {
+		if len(e.Arguments) < 5 || e.Arguments[1] != "CHAT" {
+			return
+		}
+		nick := e.Nick
+		ip := net.ParseIP(e.Arguments[3])
+		port, _ := strconv.Atoi(e.Arguments[4])
+
+		go irc.handleIncomingDCCChat(nick, ip, port)
+	})
 }

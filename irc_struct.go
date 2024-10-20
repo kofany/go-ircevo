@@ -69,8 +69,10 @@ type Connection struct {
 	idCounter int // Assign unique IDs to callbacks
 
 	// New fields added for binding to a specific local IP and connection status
-	localIP        string // Local IP to bind when connecting
-	fullyConnected bool   // Indicates if the connection is fully established
+	localIP        string      // Local IP to bind when connecting
+	fullyConnected bool        // Indicates if the connection is fully established
+	DCCManager     *DCCManager // DCC chat support
+
 }
 
 // Event represents an IRC event.
