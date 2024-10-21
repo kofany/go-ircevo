@@ -77,7 +77,7 @@ type Connection struct {
 }
 
 type ProxyConfig struct {
-	Type     string // "socks5", "http", etc.
+	Type     string // "socks5", "http", etc....
 	Address  string
 	Username string
 	Password string
