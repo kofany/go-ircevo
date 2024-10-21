@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ import (
 
 	"golang.org/x/net/proxy"
 	"golang.org/x/text/encoding"
+	"h12.io/socks"
 )
 
 const (
@@ -43,6 +45,14 @@ const (
 const CAP_TIMEOUT = time.Second * 15
 
 var ErrDisconnected = errors.New("Disconnect Called")
+
+type socks4Dialer struct {
+	dialFunc func(string, string) (net.Conn, error)
+}
+
+func (d *socks4Dialer) Dial(network, addr string) (net.Conn, error) {
+	return d.dialFunc(network, addr)
+}
 
 // Read data from a connection. To be used as a goroutine.
 func (irc *Connection) readLoop() {
@@ -474,10 +484,41 @@ func (irc *Connection) Connect(server string) error {
 		}
 	}
 
-	dialer := proxy.FromEnvironmentUsing(&net.Dialer{
-		LocalAddr: localAddr,
-		Timeout:   irc.Timeout,
-	})
+	var dialer proxy.Dialer
+	if irc.ProxyConfig != nil {
+		switch irc.ProxyConfig.Type {
+		case "socks4":
+			socks4Proxy := socks.Dial(fmt.Sprintf("socks4://%s:%s@%s", irc.ProxyConfig.Username, irc.ProxyConfig.Password, irc.ProxyConfig.Address))
+			dialer = &socks4Dialer{dialFunc: socks4Proxy}
+		case "socks5":
+			auth := &proxy.Auth{
+				User:     irc.ProxyConfig.Username,
+				Password: irc.ProxyConfig.Password,
+			}
+			socks5Proxy, err := proxy.SOCKS5("tcp", irc.ProxyConfig.Address, auth, proxy.Direct)
+			if err != nil {
+				return err
+			}
+			dialer = socks5Proxy
+		case "http":
+			proxyURL, err := url.Parse(fmt.Sprintf("http://%s:%s@%s", irc.ProxyConfig.Username, irc.ProxyConfig.Password, irc.ProxyConfig.Address))
+			if err != nil {
+				return err
+			}
+			httpProxy, err := proxy.FromURL(proxyURL, proxy.Direct)
+			if err != nil {
+				return err
+			}
+			dialer = httpProxy
+		default:
+			return fmt.Errorf("unsupported proxy type: %s", irc.ProxyConfig.Type)
+		}
+	} else {
+		dialer = &net.Dialer{
+			LocalAddr: localAddr,
+			Timeout:   irc.Timeout,
+		}
+	}
 
 	irc.socket, err = dialer.Dial("tcp", irc.Server)
 	if err != nil {
@@ -522,6 +563,15 @@ func (irc *Connection) Connect(server string) error {
 	irc.pwrite <- fmt.Sprintf("NICK %s\r\n", irc.nick)
 	irc.pwrite <- fmt.Sprintf("USER %s 0.0.0.0 0.0.0.0 :%s\r\n", irc.user, realname)
 	return nil
+}
+
+func (irc *Connection) SetProxy(proxyType, address, username, password string) {
+	irc.ProxyConfig = &ProxyConfig{
+		Type:     proxyType,
+		Address:  address,
+		Username: username,
+		Password: password,
+	}
 }
 
 // Negotiate IRCv3 capabilities
@@ -643,6 +693,7 @@ func IRC(nick, user string) *Connection {
 		QuitMessage:    "",
 		fullyConnected: false,           // Initialize to false
 		DCCManager:     NewDCCManager(), // DCC chat support
+		ProxyConfig:    nil,
 	}
 	irc.setupCallbacks()
 	return irc

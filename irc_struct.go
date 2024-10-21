@@ -41,6 +41,7 @@ type Connection struct {
 	KeepAlive        time.Duration
 	Server           string
 	Encoding         encoding.Encoding
+	ProxyConfig      *ProxyConfig
 
 	RealName string // The real name we want to display.
 	// If zero-value defaults to the user.
@@ -73,6 +74,13 @@ type Connection struct {
 	fullyConnected bool        // Indicates if the connection is fully established
 	DCCManager     *DCCManager // DCC chat support
 
+}
+
+type ProxyConfig struct {
+	Type     string // "socks5", "http", etc.
+	Address  string
+	Username string
+	Password string
 }
 
 // Event represents an IRC event.
