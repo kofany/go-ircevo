@@ -405,9 +405,11 @@ func (irc *Connection) Connected() bool {
 
 // A disconnect sends all buffered messages (if possible),
 // stops all goroutines and then closes the socket.
+// W funkcji Disconnect()
 func (irc *Connection) Disconnect() {
 	irc.Lock()
 	irc.fullyConnected = false
+	irc.registered = false // Dodane
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -415,16 +417,21 @@ func (irc *Connection) Disconnect() {
 	}
 
 	irc.Wait()
-
 	irc.end = nil
 
 	if irc.pwrite != nil {
 		close(irc.pwrite)
+		irc.pwrite = nil // Dodane
 	}
 
 	if irc.socket != nil {
 		irc.socket.Close()
+		irc.socket = nil // Dodane
 	}
+
+	// Dodane czyszczenie stanu
+	irc.nickcurrent = ""
+	irc.stopped = true
 	irc.ErrorChan() <- ErrDisconnected
 }
 
