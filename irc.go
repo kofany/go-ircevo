@@ -39,7 +39,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevent fork by kofany"
+	VERSION = "go-ircevent v2.1+myip"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -405,11 +405,9 @@ func (irc *Connection) Connected() bool {
 
 // A disconnect sends all buffered messages (if possible),
 // stops all goroutines and then closes the socket.
-// W funkcji Disconnect()
 func (irc *Connection) Disconnect() {
 	irc.Lock()
 	irc.fullyConnected = false
-	irc.registered = false // Dodane
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -417,21 +415,16 @@ func (irc *Connection) Disconnect() {
 	}
 
 	irc.Wait()
+
 	irc.end = nil
 
 	if irc.pwrite != nil {
 		close(irc.pwrite)
-		irc.pwrite = nil // Dodane
 	}
 
 	if irc.socket != nil {
 		irc.socket.Close()
-		irc.socket = nil // Dodane
 	}
-
-	// Dodane czyszczenie stanu
-	irc.nickcurrent = ""
-	irc.stopped = true
 	irc.ErrorChan() <- ErrDisconnected
 }
 
@@ -448,16 +441,6 @@ func (irc *Connection) Reconnect() error {
 // This function also takes care of identification if a password is provided.
 // RFC 1459 details: https://tools.ietf.org/html/rfc1459#section-4.1
 func (irc *Connection) Connect(server string) error {
-	// Ustaw początkowy stan
-	irc.Lock()
-	irc.fullyConnected = false
-	callback := irc.onStateChange
-	irc.Unlock()
-
-	if callback != nil {
-		callback(false, false, false)
-	}
-
 	irc.Server = server
 	// Mark Server as stopped since there can be an error during connect
 	irc.stopped = true
@@ -539,12 +522,8 @@ func (irc *Connection) Connect(server string) error {
 
 	irc.socket, err = dialer.Dial("tcp", irc.Server)
 	if err != nil {
-		if callback != nil {
-			callback(false, false, false)
-		}
 		return err
 	}
-
 	if irc.UseTLS {
 		irc.socket = tls.Client(irc.socket, irc.TLSConfig)
 	}
@@ -554,10 +533,6 @@ func (irc *Connection) Connect(server string) error {
 	}
 
 	irc.stopped = false
-	if callback != nil {
-		callback(true, false, false)
-	}
-
 	irc.Log.Printf("Connected to %s (%s)\n", irc.Server, irc.socket.RemoteAddr())
 
 	irc.pwrite = make(chan string, 10)
@@ -577,9 +552,6 @@ func (irc *Connection) Connect(server string) error {
 
 	err = irc.negotiateCaps()
 	if err != nil {
-		if callback != nil {
-			callback(false, false, false)
-		}
 		return err
 	}
 
@@ -590,12 +562,6 @@ func (irc *Connection) Connect(server string) error {
 
 	irc.pwrite <- fmt.Sprintf("NICK %s\r\n", irc.nick)
 	irc.pwrite <- fmt.Sprintf("USER %s 0.0.0.0 0.0.0.0 :%s\r\n", irc.user, realname)
-
-	// Ustawiamy stan "zarejestrowany" po wysłaniu NICK i USER
-	if callback != nil {
-		callback(true, true, false)
-	}
-
 	return nil
 }
 
@@ -739,23 +705,4 @@ func (irc *Connection) SetLocalIP(ip string) {
 	irc.localIP = ip
 }
 
-func (irc *Connection) IsFullyConnected() bool {
-	irc.Lock()
-	defer irc.Unlock()
-	return irc.fullyConnected
-}
-
-func (irc *Connection) SetStateChangeCallback(callback func(connected, registered, fullyConnected bool)) {
-	irc.Lock()
-	defer irc.Unlock()
-	irc.onStateChange = callback
-}
-
-func (irc *Connection) GetConnectionState() (connected, registered, fullyConnected bool) {
-	irc.Lock()
-	defer irc.Unlock()
-	connected = !irc.stopped
-	registered = irc.registered
-	fullyConnected = irc.fullyConnected
-	return
-}
+// DCC
