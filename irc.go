@@ -720,4 +720,8 @@ func (irc *Connection) SetLocalIP(ip string) {
 	irc.localIP = ip
 }
 
-// DCC
+func (irc *Connection) IsFullyConnected() bool {
+	irc.Lock()
+	defer irc.Unlock()
+	return irc.fullyConnected
+}
