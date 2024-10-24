@@ -42,6 +42,7 @@ type Connection struct {
 	Server           string
 	Encoding         encoding.Encoding
 	ProxyConfig      *ProxyConfig
+	onStateChange    func(connected, registered, fullyConnected bool)
 
 	RealName string // The real name we want to display.
 	// If zero-value defaults to the user.
