@@ -1,79 +1,51 @@
-Description
------------
+# go-ircevo
 
-Event based irc client library.
+go-ircevo is an evolved and extended version of the original [go-ircevent](https://github.com/thoj/go-ircevent) library by Thomas Jager. This library provides an enhanced framework for interacting with IRC servers, supporting additional features like DCC, SASL authentication, proxy support, and more.
 
+Originally, this library started as a fork of go-ircevent, but it has been significantly expanded to meet the needs I encountered while developing my own IRC bot. Due to the number of changes and the direction I've taken, I'm continuing this project under a new name, go-ircevo. Nevertheless, I intend to keep contributing important features back to the original go-ircevent fork, ensuring backward compatibility so that they can be integrated into the original library if desired.
 
-Features
---------
-* Event based. Register Callbacks for the events you need to handle.
-* Handles basic irc demands for you
-	* Standard CTCP
-	* Reconnections on errors
-	* Detect stoned servers
+## Features
 
-Install
--------
-	$ go get github.com/thoj/go-ircevent
+- Support for direct client-to-client (DCC) communication
+- Enhanced IRC command handling
+- SASL authentication support
+- Proxy integration for IRC connections
+- Extended message handling
+- Compatible with the original go-ircevent API for easy migration
 
-Example
--------
-See [examples/simple/simple.go](examples/simple/simple.go) and [irc_test.go](irc_test.go)
+## Installation
 
-Events for callbacks
---------------------
-* 001 Welcome
-* PING
-* CTCP Unknown CTCP
-* CTCP_VERSION Version request (Handled internaly)
-* CTCP_USERINFO
-* CTCP_CLIENTINFO
-* CTCP_TIME
-* CTCP_PING
-* CTCP_ACTION (/me)
-* PRIVMSG
-* MODE
-* JOIN
+```bash
+go get github.com/kofany/go-ircevo
+```
 
-+Many more
+## Usage
 
+Here is an example of how to use go-ircevo to connect to an IRC server:
 
-AddCallback Example
--------------------
-	ircobj.AddCallback("PRIVMSG", func(event *irc.Event) {
-		//event.Message() contains the message
-		//event.Nick Contains the sender
-		//event.Arguments[0] Contains the channel
-	});
+```go
+package main
 
-Please note: Callbacks are run in the main thread. If a callback needs a long
-time to execute please run it in a new thread.
+import (
+    "log"
+    "github.com/kofany/go-ircevo"
+)
 
-Example:
+func main() {
+    conn := ircevo.IRC("nickname", "username")
+    err := conn.Connect("irc.freenode.net:6667")
+    if err != nil {
+        log.Fatal(err)
+    }
 
-        ircobj.AddCallback("PRIVMSG", func(event *irc.Event) {
-		go func(event *irc.Event) {
-                        //event.Message() contains the message
-                        //event.Nick Contains the sender
-                        //event.Arguments[0] Contains the channel
-		}(event)
-        });
+    conn.AddCallback("001", func(e *ircevo.Event) {
+        conn.Join("#channel")
+    })
 
+    conn.Loop()
+}
+```
 
-Commands
---------
-	ircobj := irc.IRC("<nick>", "<user>") //Create new ircobj
-	//Set options
-	ircobj.UseTLS = true //default is false
-	//ircobj.TLSOptions //set ssl options
-	ircobj.Password = "[server password]"
-	//Commands
-	ircobj.Connect("irc.someserver.com:6667") //Connect to server
-	ircobj.SendRaw("<string>") //sends string to server. Adds \r\n
-	ircobj.SendRawf("<formatstring>", ...) //sends formatted string to server.n
-	ircobj.Join("<#channel> [password]") 
-	ircobj.Nick("newnick") 
-	ircobj.Privmsg("<nickname | #channel>", "msg") // sends a message to either a certain nick or a channel
-	ircobj.Privmsgf(<nickname | #channel>, "<formatstring>", ...)
-	ircobj.Notice("<nickname | #channel>", "msg")
-	ircobj.Noticef("<nickname | #channel>", "<formatstring>", ...)
+## License
+
+This project is licensed under the BSD license, based on the original go-ircevent [library](https://github.com/thoj/go-ircevent) by Thomas Jager. Please see the LICENSE file for more details.

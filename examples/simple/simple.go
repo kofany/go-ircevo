@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 
-	irc "github.com/kofany/go-ircevent"
+	irc "github.com/kofany/go-ircevo"
 )
 
 const channel = "#go-eventirc-test"

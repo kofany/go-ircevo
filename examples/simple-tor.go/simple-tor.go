@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	irc "github.com/kofany/go-ircevent"
+	irc "github.com/kofany/go-ircevo"
 )
 
 const addr = "libera75jm6of4wxpxt4aynol3xjmbtxgfyjpu34ss4d7r7q2v5zrpyd.onion:6697"

@@ -1,4 +1,4 @@
-module github.com/kofany/go-ircevent
+module github.com/kofany/go-ircevo
 
 go 1.23.2
 
