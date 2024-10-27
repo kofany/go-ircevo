@@ -112,6 +112,10 @@ func (irc *Connection) readLoop() {
 			event, err := parseToEvent(msg)
 			if err == nil {
 				event.Connection = irc
+				if irc.HandleErrorAsDisconnect && strings.ToUpper(event.Code) == "ERROR" {
+					errChan <- errors.New("Received ERROR from server: " + event.Message())
+					return
+				}
 				irc.RunCallbacks(event)
 			}
 		}
@@ -262,6 +266,10 @@ func (irc *Connection) Loop() {
 	errChan := irc.ErrorChan()
 	for !irc.isQuitting() {
 		err := <-errChan
+		if irc.HandleErrorAsDisconnect && strings.HasPrefix(err.Error(), "Received ERROR from server:") {
+			irc.Log.Printf("Received ERROR event, not attempting automatic reconnect.")
+			return
+		}
 		if irc.end != nil {
 			close(irc.end)
 		}
@@ -695,20 +703,21 @@ func IRC(nick, user string) *Connection {
 	}
 
 	irc := &Connection{
-		nick:           nick,
-		nickcurrent:    nick,
-		user:           user,
-		Log:            log.New(os.Stdout, "", log.LstdFlags),
-		end:            make(chan struct{}),
-		Version:        VERSION,
-		KeepAlive:      4 * time.Minute,
-		Timeout:        1 * time.Minute,
-		PingFreq:       15 * time.Minute,
-		SASLMech:       "PLAIN",
-		QuitMessage:    "",
-		fullyConnected: false,           // Initialize to false
-		DCCManager:     NewDCCManager(), // DCC chat support
-		ProxyConfig:    nil,
+		nick:                    nick,
+		nickcurrent:             nick,
+		user:                    user,
+		Log:                     log.New(os.Stdout, "", log.LstdFlags),
+		end:                     make(chan struct{}),
+		Version:                 VERSION,
+		KeepAlive:               4 * time.Minute,
+		Timeout:                 1 * time.Minute,
+		PingFreq:                15 * time.Minute,
+		SASLMech:                "PLAIN",
+		QuitMessage:             "",
+		fullyConnected:          false,           // Initialize to false
+		DCCManager:              NewDCCManager(), // DCC chat support
+		ProxyConfig:             nil,
+		HandleErrorAsDisconnect: true, // Default to true to not reconnect after ERROR event
 	}
 	irc.setupCallbacks()
 	return irc
