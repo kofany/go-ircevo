@@ -334,12 +334,11 @@ func (irc *Connection) setupCallbacks() {
 		}
 	})
 
-	// Handle NICK changes
+	// Handle NICK changes fixed
 	irc.AddCallback("NICK", func(e *Event) {
-		if e.Nick == irc.nickcurrent { // sprawdzamy obecny nick zamiast żądanego
-			irc.Lock() // dodajemy mutex dla bezpieczeństwa
+		if e.Nick == irc.nickcurrent {
+			irc.Lock()
 			irc.nickcurrent = e.Message()
-			// opcjonalnie możemy też zsynchronizować nick
 			irc.nick = e.Message()
 			irc.Unlock()
 		}
