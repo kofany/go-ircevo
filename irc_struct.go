@@ -66,7 +66,6 @@ type Connection struct {
 	nick                    string // The nickname we want.
 	nickcurrent             string // The nickname we currently have.
 	user                    string
-	registered              bool
 	events                  map[string]map[int]func(*Event)
 	eventsMutex             sync.Mutex
 	QuitMessage             string

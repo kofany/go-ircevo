@@ -187,9 +187,9 @@ func TestConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
-	rand.Seed(time.Now().UnixNano())
-	ircnick1 := randStr(8)
-	ircnick2 := randStr(8)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ircnick1 := randStrWithRand(r, 8)
+	ircnick2 := randStrWithRand(r, 8)
 	irccon1 := IRC(ircnick1, "IRCTest1")
 
 	irccon1.PingFreq = time.Second * 3
@@ -199,7 +199,7 @@ func TestConnection(t *testing.T) {
 	irccon2 := IRC(ircnick2, "IRCTest2")
 	debugTest(irccon2)
 
-	teststr := randStr(20)
+	teststr := randStrWithRand(r, 20)
 	testmsgok := make(chan bool, 1)
 
 	irccon1.AddCallback("001", func(e *Event) { irccon1.Join(channel) })
@@ -228,7 +228,7 @@ func TestConnection(t *testing.T) {
 	})
 
 	irccon2.AddCallback("366", func(e *Event) {
-		ircnick2 = randStr(8)
+		ircnick2 = randStrWithRand(r, 8)
 		irccon2.Nick(ircnick2)
 	})
 
@@ -271,7 +271,8 @@ func TestReconnect(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
-	ircnick1 := randStr(8)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ircnick1 := randStrWithRand(r, 8)
 	irccon := IRC(ircnick1, "IRCTestRe")
 	irccon.PingFreq = time.Second * 3
 	debugTest(irccon)
@@ -307,7 +308,8 @@ func TestConnectionSSL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
-	ircnick1 := randStr(8)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ircnick1 := randStrWithRand(r, 8)
 	irccon := IRC(ircnick1, "IRCTestSSL")
 	debugTest(irccon)
 	irccon.UseTLS = true
@@ -329,10 +331,11 @@ func TestConnectionSSL(t *testing.T) {
 }
 
 // Helper Functions
-func randStr(n int) string {
+
+func randStrWithRand(r *rand.Rand, n int) string {
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = dict[rand.Intn(len(dict))]
+		b[i] = dict[r.Intn(len(dict))]
 	}
 	return string(b)
 }

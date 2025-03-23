@@ -34,7 +34,6 @@ type DCCChat struct {
 	Conn     net.Conn
 	Incoming chan string
 	Outgoing chan string
-	mutex    sync.Mutex
 }
 
 // DCCManager zarządza wszystkimi połączeniami DCC
@@ -51,7 +50,14 @@ func NewDCCManager() *DCCManager {
 }
 
 func (irc *Connection) handleIncomingDCCChat(nick string, ip net.IP, port int) {
-	addr := fmt.Sprintf("%s:%d", ip.String(), port)
+	var addr string
+	if ip.To4() == nil {
+		// IPv6 address
+		addr = fmt.Sprintf("[%s]:%d", ip.String(), port)
+	} else {
+		// IPv4 address
+		addr = fmt.Sprintf("%s:%d", ip.String(), port)
+	}
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		irc.Log.Printf("Error connecting to DCC CHAT from %s: %v", nick, err)

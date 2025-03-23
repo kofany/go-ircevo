@@ -582,9 +582,9 @@ func (irc *Connection) Connect(server string) error {
 	if irc.RealName != "" {
 		realname = irc.RealName
 	}
-
-	irc.pwrite <- fmt.Sprintf("NICK %s\r\n", irc.nick)
-	irc.pwrite <- fmt.Sprintf("USER %s 0.0.0.0 0.0.0.0 :%s\r\n", irc.user, realname)
+	irc.pwrite <- "CAP LS 302\r\n"
+	irc.pwrite <- "NICK " + irc.nick + "\r\n"
+	irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
 	return nil
 }
 
