@@ -254,11 +254,16 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("433", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
+
+		// Track the error regardless of connection state
+		irc.nickError = "Nickname already in use"
+
 		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
 			irc.modifyNick()
+			irc.lastNickChange = time.Now()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -267,11 +272,16 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("437", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
+
+		// Track the error regardless of connection state
+		irc.nickError = "Nickname temporarily unavailable"
+
 		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
 			irc.modifyNick()
+			irc.lastNickChange = time.Now()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -280,11 +290,16 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("431", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
+
+		// Track the error regardless of connection state
+		irc.nickError = "No nickname given"
+
 		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
 			irc.modifyNick()
+			irc.lastNickChange = time.Now()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -293,12 +308,17 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("432", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
+
+		// Track the error regardless of connection state
+		irc.nickError = "Erroneous nickname"
+
 		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
 			// Add prefix 'Err' to try a different nickname
 			irc.nickcurrent = "Err" + irc.nickcurrent
+			irc.lastNickChange = time.Now()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -307,11 +327,16 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("436", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
+
+		// Track the error regardless of connection state
+		irc.nickError = "Nickname collision"
+
 		if !irc.fullyConnected {
 			if irc.nickcurrent == "" {
 				irc.nickcurrent = irc.nick
 			}
 			irc.modifyNick()
+			irc.lastNickChange = time.Now()
 			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
@@ -320,6 +345,10 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("484", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
+
+		// Track the error regardless of connection state
+		irc.nickError = "Restricted nickname"
+
 		if !irc.fullyConnected {
 			// Keep the current nickname and do not attempt to change it further
 		}
@@ -334,21 +363,37 @@ func (irc *Connection) setupCallbacks() {
 		}
 	})
 
-	// Handle NICK changes fixed
+	// Handle NICK changes
 	irc.AddCallback("NICK", func(e *Event) {
+		irc.Lock()
+		defer irc.Unlock()
+
+		// If this is our own nickname change
 		if e.Nick == irc.nickcurrent {
-			irc.Lock()
+			// Update both current and desired nickname
 			irc.nickcurrent = e.Message()
 			irc.nick = e.Message()
-			irc.Unlock()
+			// Update the last nickname change time
+			irc.lastNickChange = time.Now()
+			// Clear any nickname error since the change was successful
+			irc.nickError = ""
 		}
 	})
 
 	// Set fullyConnected to true on successful connection (001)
+	// This is the server welcome message that confirms our connection and nickname
 	irc.AddCallback("001", func(e *Event) {
 		irc.Lock()
+		// The first argument contains our confirmed nickname
 		irc.nickcurrent = e.Arguments[0]
+		// Also update the desired nickname to match what the server confirmed
+		irc.nick = e.Arguments[0]
+		// Mark the connection as fully established
 		irc.fullyConnected = true
+		// Update the last nickname change time
+		irc.lastNickChange = time.Now()
+		// Clear any nickname error since we're successfully connected
+		irc.nickError = ""
 		irc.Unlock()
 	})
 	// DCC Chat support

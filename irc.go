@@ -54,7 +54,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevent v2.1+myip"
+	VERSION = "go-ircevo v1.0.8"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -385,13 +385,50 @@ func (irc *Connection) SendRawf(format string, a ...interface{}) {
 // Set (new) nickname.
 // RFC 1459 details: https://tools.ietf.org/html/rfc1459#section-4.1.2
 func (irc *Connection) Nick(n string) {
+	irc.Lock()
 	irc.nick = n
+	irc.lastNickChange = time.Now()
+	irc.Unlock()
 	irc.SendRawf("NICK %s", n)
 }
 
-// Determine nick currently used with the connection.
+// GetNick returns the current nickname used in the IRC connection.
+// This method is thread-safe.
+//
+// Note: This method only returns the current nickname and does not provide
+// information about whether the nickname has been confirmed by the server
+// or if there are any pending nickname changes. For more detailed nickname
+// status information, use GetNickStatus() instead.
 func (irc *Connection) GetNick() string {
+	irc.Lock()
+	defer irc.Unlock()
 	return irc.nickcurrent
+}
+
+// GetNickStatus returns detailed information about the current nickname status.
+// This includes whether the nickname has been confirmed by the server,
+// any pending nickname changes, and error states.
+//
+// This method is thread-safe and provides more comprehensive information
+// than GetNick().
+func (irc *Connection) GetNickStatus() *NickStatus {
+	irc.Lock()
+	defer irc.Unlock()
+
+	// If lastNickChange is zero, use the current time
+	lastChangeTime := irc.lastNickChange
+	if lastChangeTime.IsZero() {
+		lastChangeTime = time.Now()
+	}
+
+	return &NickStatus{
+		Current:        irc.nickcurrent,
+		Desired:        irc.nick,
+		Confirmed:      irc.fullyConnected,
+		LastChangeTime: lastChangeTime,
+		PendingChange:  irc.nick != irc.nickcurrent,
+		Error:          irc.nickError,
+	}
 }
 
 // Query information about a particular nickname.
@@ -715,6 +752,8 @@ func IRC(nick, user string) *Connection {
 		SASLMech:                "PLAIN",
 		QuitMessage:             "",
 		fullyConnected:          false,           // Initialize to false
+		lastNickChange:          time.Now(),      // Initialize to current time
+		nickError:               "",              // Initialize to empty string
 		DCCManager:              NewDCCManager(), // DCC chat support
 		ProxyConfig:             nil,
 		HandleErrorAsDisconnect: true, // Default to true to not reconnect after ERROR event

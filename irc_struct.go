@@ -78,6 +78,8 @@ type Connection struct {
 	idCounter               int
 	localIP                 string      // Local IP to bind when connecting
 	fullyConnected          bool        // Indicates if the connection is fully established
+	lastNickChange          time.Time   // Timestamp of the last nickname change
+	nickError               string      // Last error related to nickname
 	DCCManager              *DCCManager // DCC chat support
 	HandleErrorAsDisconnect bool        // Fix reconnection loop after ERROR event if user have own reconnect implementation
 }
@@ -125,4 +127,27 @@ func (e *Event) MessageWithoutFormat() string {
 		return ""
 	}
 	return ircFormat.ReplaceAllString(e.Arguments[len(e.Arguments)-1], "")
+}
+
+// NickStatus represents the current status of a nickname in the IRC connection.
+// It provides detailed information about the nickname state, including whether
+// it has been confirmed by the server and any pending changes.
+type NickStatus struct {
+	// Current is the nickname currently in use according to the client
+	Current string
+
+	// Desired is the nickname that the user wants to use
+	Desired string
+
+	// Confirmed indicates whether the server has confirmed the current nickname
+	Confirmed bool
+
+	// LastChangeTime is the timestamp of the last nickname change
+	LastChangeTime time.Time
+
+	// PendingChange indicates if there's a nickname change in progress
+	PendingChange bool
+
+	// Error contains any error related to the nickname (e.g., already in use)
+	Error string
 }

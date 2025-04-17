@@ -26,7 +26,7 @@ Since the default value is now set to `true`, existing bots and applications usi
 
 ## How to Set the `HandleErrorAsDisconnect` Flag
 
-To adjust the behavior of your application, set the `HandleErrorAsDisconnect` flag when initializing your IRC connection:
+To adjust the behavior of your application, set the `HandleErrorAsDisconnect` flag when initializing your IRC connection: 
 
 ```go
 irccon := irc.IRC("nick", "user")
