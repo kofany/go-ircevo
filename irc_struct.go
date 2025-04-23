@@ -132,22 +132,31 @@ func (e *Event) MessageWithoutFormat() string {
 // NickStatus represents the current status of a nickname in the IRC connection.
 // It provides detailed information about the nickname state, including whether
 // it has been confirmed by the server and any pending changes.
+//
+// According to RFC 2812 section 3.1.2, a nickname change is only confirmed
+// when the server sends a NICK message in the format:
+// :OLD_NICK!user@host NICK NEW_NICK
 type NickStatus struct {
-	// Current is the nickname currently in use according to the client
+	// Current is the nickname currently in use according to the server.
+	// This is the nickname that has been confirmed by the server.
 	Current string
 
-	// Desired is the nickname that the user wants to use
+	// Desired is the nickname that the user wants to use.
+	// This is the nickname that was requested with Nick().
 	Desired string
 
-	// Confirmed indicates whether the server has confirmed the current nickname
+	// Confirmed indicates whether the server has confirmed the current nickname.
+	// This is true after receiving the 001 welcome message or a successful NICK change.
 	Confirmed bool
 
-	// LastChangeTime is the timestamp of the last nickname change
+	// LastChangeTime is the timestamp of the last nickname change attempt.
 	LastChangeTime time.Time
 
-	// PendingChange indicates if there's a nickname change in progress
+	// PendingChange indicates if there's a nickname change in progress.
+	// This is true when Current and Desired are different.
 	PendingChange bool
 
-	// Error contains any error related to the nickname (e.g., already in use)
+	// Error contains any error related to the nickname (e.g., already in use).
+	// This is set when the server rejects a nickname change.
 	Error string
 }

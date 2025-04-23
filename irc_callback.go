@@ -364,19 +364,29 @@ func (irc *Connection) setupCallbacks() {
 	})
 
 	// Handle NICK changes
+	// According to RFC 2812 section 3.1.2, the proper format for a nickname change is:
+	// :OLD_NICK!user@host NICK NEW_NICK
 	irc.AddCallback("NICK", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
 
 		// If this is our own nickname change
 		if e.Nick == irc.nickcurrent {
-			// Update both current and desired nickname
-			irc.nickcurrent = e.Message()
-			irc.nick = e.Message()
-			// Update the last nickname change time
-			irc.lastNickChange = time.Now()
-			// Clear any nickname error since the change was successful
-			irc.nickError = ""
+			// Verify that the message format is correct
+			newNick := e.Message()
+			if newNick != "" {
+				// Update current nickname to the new one
+				irc.nickcurrent = newNick
+				// Only update desired nickname if it matches the old one
+				// This preserves any pending desired nickname changes
+				if irc.nick == e.Nick {
+					irc.nick = newNick
+				}
+				// Update the last nickname change time
+				irc.lastNickChange = time.Now()
+				// Clear any nickname error since the change was successful
+				irc.nickError = ""
+			}
 		}
 	})
 

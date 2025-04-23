@@ -54,7 +54,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.0.8"
+	VERSION = "go-ircevo v1.0.9"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -240,10 +240,11 @@ func (irc *Connection) pingLoop() {
 		case <-ticker2.C:
 			// Ping at the ping frequency
 			irc.SendRawf("PING %d", time.Now().UnixNano())
-			// Try to recapture nickname if it's not as configured.
+			// Check if there's a pending nickname change
 			irc.Lock()
 			if irc.nick != irc.nickcurrent {
-				irc.nickcurrent = irc.nick
+				// Send a NICK command to try to change to the desired nickname
+				// The actual change will only happen when the server confirms it
 				irc.SendRawf("NICK %s", irc.nick)
 			}
 			irc.Unlock()
@@ -384,11 +385,22 @@ func (irc *Connection) SendRawf(format string, a ...interface{}) {
 
 // Set (new) nickname.
 // RFC 1459 details: https://tools.ietf.org/html/rfc1459#section-4.1.2
+// RFC 2812 details: https://tools.ietf.org/html/rfc2812#section-3.1.2
+//
+// This function sends a NICK command to the server to request a nickname change.
+// The actual nickname change is only confirmed when the server sends back a
+// NICK message in the format: :OLD_NICK!user@host NICK NEW_NICK
+//
+// The function updates the desired nickname (irc.nick) but does not update
+// the current nickname (irc.nickcurrent) until confirmation is received.
 func (irc *Connection) Nick(n string) {
 	irc.Lock()
+	// Update only the desired nickname
 	irc.nick = n
+	// Record when we attempted to change the nickname
 	irc.lastNickChange = time.Now()
 	irc.Unlock()
+	// Send the NICK command to the server
 	irc.SendRawf("NICK %s", n)
 }
 
@@ -408,6 +420,14 @@ func (irc *Connection) GetNick() string {
 // GetNickStatus returns detailed information about the current nickname status.
 // This includes whether the nickname has been confirmed by the server,
 // any pending nickname changes, and error states.
+//
+// According to RFC 2812 section 3.1.2, a nickname change is only confirmed
+// when the server sends a NICK message in the format:
+// :OLD_NICK!user@host NICK NEW_NICK
+//
+// The Current field contains the nickname that has been confirmed by the server.
+// The Desired field contains the nickname that was requested with Nick().
+// The PendingChange field is true when Current and Desired are different.
 //
 // This method is thread-safe and provides more comprehensive information
 // than GetNick().
