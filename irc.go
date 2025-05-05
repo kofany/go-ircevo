@@ -54,7 +54,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.0.9"
+	VERSION = "go-ircevo v1.1.0"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -441,6 +441,18 @@ func (irc *Connection) GetNickStatus() *NickStatus {
 		lastChangeTime = time.Now()
 	}
 
+	// If we have a current nickname and have received some IRC events but aren't marked as fully connected,
+	// we're probably connected but the flag wasn't set properly
+	if !irc.fullyConnected && irc.nickcurrent != "" && irc.registrationSteps > 0 {
+		// Check if registration timeout has elapsed
+		if !irc.registrationStartTime.IsZero() && time.Since(irc.registrationStartTime) >= irc.registrationTimeout {
+			irc.fullyConnected = true
+			if irc.Debug {
+				irc.Log.Printf("Setting fullyConnected=true in GetNickStatus due to timeout\n")
+			}
+		}
+	}
+
 	return &NickStatus{
 		Current:        irc.nickcurrent,
 		Desired:        irc.nick,
@@ -488,6 +500,8 @@ func (irc *Connection) Connected() bool {
 func (irc *Connection) Disconnect() {
 	irc.Lock()
 	irc.fullyConnected = false
+	irc.registrationSteps = 0
+	irc.registrationStartTime = time.Time{}
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -512,6 +526,8 @@ func (irc *Connection) Disconnect() {
 func (irc *Connection) Reconnect() error {
 	irc.Lock()
 	irc.fullyConnected = false
+	irc.registrationSteps = 0
+	irc.registrationStartTime = time.Time{}
 	irc.Unlock()
 	irc.end = make(chan struct{})
 	return irc.Connect(irc.Server)
@@ -524,6 +540,13 @@ func (irc *Connection) Connect(server string) error {
 	irc.Server = server
 	// Mark Server as stopped since there can be an error during connect
 	irc.stopped = true
+
+	// Reset registration status
+	irc.Lock()
+	irc.fullyConnected = false
+	irc.registrationSteps = 0
+	irc.registrationStartTime = time.Time{}
+	irc.Unlock()
 
 	// Make sure everything is ready for connection
 	if len(irc.Server) == 0 {
@@ -774,6 +797,9 @@ func IRC(nick, user string) *Connection {
 		fullyConnected:          false,           // Initialize to false
 		lastNickChange:          time.Now(),      // Initialize to current time
 		nickError:               "",              // Initialize to empty string
+		registrationSteps:       0,               // Initialize registration steps counter
+		registrationStartTime:   time.Time{},     // Zero time initially
+		registrationTimeout:     5 * time.Second, // 5 seconds timeout for registration
 		DCCManager:              NewDCCManager(), // DCC chat support
 		ProxyConfig:             nil,
 		HandleErrorAsDisconnect: true, // Default to true to not reconnect after ERROR event
@@ -788,6 +814,15 @@ func (irc *Connection) SetLocalIP(ip string) {
 	irc.localIP = ip
 }
 
+// IsFullyConnected returns whether the connection is fully established with the IRC server.
+// The connection is considered fully established in the following cases:
+// 1. After receiving the RPL_WELCOME (001) message from the server
+// 2. After receiving a sequence of registration messages (001, 002, 003, 004, 005)
+// 3. After receiving the end of MOTD (376) or no MOTD (422) messages
+// 4. After receiving certain activity events like JOIN, PART, MODE, PRIVMSG, or PING
+// 5. After a timeout period since the start of registration
+//
+// This method is thread-safe.
 func (irc *Connection) IsFullyConnected() bool {
 	irc.Lock()
 	defer irc.Unlock()

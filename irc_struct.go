@@ -76,12 +76,15 @@ type Connection struct {
 	stopped                 bool
 	quit                    bool
 	idCounter               int
-	localIP                 string      // Local IP to bind when connecting
-	fullyConnected          bool        // Indicates if the connection is fully established
-	lastNickChange          time.Time   // Timestamp of the last nickname change
-	nickError               string      // Last error related to nickname
-	DCCManager              *DCCManager // DCC chat support
-	HandleErrorAsDisconnect bool        // Fix reconnection loop after ERROR event if user have own reconnect implementation
+	localIP                 string        // Local IP to bind when connecting
+	fullyConnected          bool          // Indicates if the connection is fully established
+	lastNickChange          time.Time     // Timestamp of the last nickname change
+	nickError               string        // Last error related to nickname
+	registrationSteps       int           // Counter for registration steps
+	registrationStartTime   time.Time     // Time when registration started
+	registrationTimeout     time.Duration // Timeout for registration process
+	DCCManager              *DCCManager   // DCC chat support
+	HandleErrorAsDisconnect bool          // Fix reconnection loop after ERROR event if user have own reconnect implementation
 }
 
 type ProxyConfig struct {

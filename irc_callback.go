@@ -222,6 +222,17 @@ func (irc *Connection) setupCallbacks() {
 	// Handle PING events
 	irc.AddCallback("PING", func(e *Event) {
 		irc.SendRaw("PONG :" + e.Message())
+
+		// If we're receiving PING events, we must be connected to the server
+		irc.Lock()
+		// If we're not marked as fully connected but we're receiving PING events
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.fullyConnected = true
+			if irc.Debug {
+				irc.Log.Printf("Setting fullyConnected=true due to PING event\n")
+			}
+		}
+		irc.Unlock()
 	})
 
 	// Version handler
@@ -404,8 +415,159 @@ func (irc *Connection) setupCallbacks() {
 		irc.lastNickChange = time.Now()
 		// Clear any nickname error since we're successfully connected
 		irc.nickError = ""
+		// Start registration process tracking
+		irc.registrationSteps = 1
+		irc.registrationStartTime = time.Now()
 		irc.Unlock()
 	})
+
+	// Handle RPL_YOURHOST (002)
+	irc.AddCallback("002", func(e *Event) {
+		irc.Lock()
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.registrationSteps++
+		} else if irc.registrationSteps > 0 {
+			// If we're already fully connected, ensure it stays that way
+			irc.fullyConnected = true
+		}
+		irc.Unlock()
+	})
+
+	// Handle RPL_CREATED (003)
+	irc.AddCallback("003", func(e *Event) {
+		irc.Lock()
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.registrationSteps++
+		} else if irc.registrationSteps > 0 {
+			// If we're already fully connected, ensure it stays that way
+			irc.fullyConnected = true
+		}
+		irc.Unlock()
+	})
+
+	// Handle RPL_MYINFO (004)
+	irc.AddCallback("004", func(e *Event) {
+		irc.Lock()
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.registrationSteps++
+		} else if irc.registrationSteps > 0 {
+			// If we're already fully connected, ensure it stays that way
+			irc.fullyConnected = true
+		}
+		irc.Unlock()
+	})
+
+	// Handle RPL_ISUPPORT (005)
+	irc.AddCallback("005", func(e *Event) {
+		irc.Lock()
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.registrationSteps++
+			// If we've received enough registration messages, mark as fully connected
+			if irc.registrationSteps >= 4 {
+				irc.fullyConnected = true
+			}
+		} else if irc.registrationSteps > 0 {
+			// If we're already fully connected, ensure it stays that way
+			irc.fullyConnected = true
+		}
+		irc.Unlock()
+	})
+
+	// Handle RPL_ENDOFMOTD (376) - End of MOTD
+	irc.AddCallback("376", func(e *Event) {
+		irc.Lock()
+		// If we've started registration but aren't fully connected yet
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.fullyConnected = true
+		}
+		irc.Unlock()
+	})
+
+	// Handle ERR_NOMOTD (422) - No MOTD
+	irc.AddCallback("422", func(e *Event) {
+		irc.Lock()
+		// If we've started registration but aren't fully connected yet
+		if !irc.fullyConnected && irc.registrationSteps > 0 {
+			irc.fullyConnected = true
+		}
+		irc.Unlock()
+	})
+	// Handle JOIN events - if we're joining channels, we must be connected
+	irc.AddCallback("JOIN", func(e *Event) {
+		// If this is our own JOIN event
+		if e.Nick == irc.nickcurrent {
+			irc.Lock()
+			// If we're receiving JOIN events but aren't marked as fully connected
+			if !irc.fullyConnected {
+				irc.fullyConnected = true
+				if irc.Debug {
+					irc.Log.Printf("Setting fullyConnected=true due to JOIN event\n")
+				}
+			}
+			irc.Unlock()
+		}
+	})
+
+	// Handle PART events - if we're parting channels, we must be connected
+	irc.AddCallback("PART", func(e *Event) {
+		// If this is our own PART event
+		if e.Nick == irc.nickcurrent {
+			irc.Lock()
+			// If we're receiving PART events but aren't marked as fully connected
+			if !irc.fullyConnected {
+				irc.fullyConnected = true
+				if irc.Debug {
+					irc.Log.Printf("Setting fullyConnected=true due to PART event\n")
+				}
+			}
+			irc.Unlock()
+		}
+	})
+
+	// Handle MODE events - if we're receiving mode changes, we must be connected
+	irc.AddCallback("MODE", func(e *Event) {
+		// If we have arguments and the first one is our nickname or a channel we're in
+		if len(e.Arguments) > 0 {
+			irc.Lock()
+			// If the mode change is for our nickname
+			if e.Arguments[0] == irc.nickcurrent {
+				// If we're receiving MODE events but aren't marked as fully connected
+				if !irc.fullyConnected {
+					irc.fullyConnected = true
+					if irc.Debug {
+						irc.Log.Printf("Setting fullyConnected=true due to MODE event for our nick\n")
+					}
+				}
+			} else if e.Arguments[0][0] == '#' || e.Arguments[0][0] == '&' {
+				// If it's a channel mode change and we're not marked as fully connected
+				if !irc.fullyConnected {
+					irc.fullyConnected = true
+					if irc.Debug {
+						irc.Log.Printf("Setting fullyConnected=true due to channel MODE event\n")
+					}
+				}
+			}
+			irc.Unlock()
+		}
+	})
+
+	// Handle PRIVMSG events - if we're receiving messages, we must be connected
+	irc.AddCallback("PRIVMSG", func(e *Event) {
+		irc.Lock()
+		// If we're receiving PRIVMSG events but aren't marked as fully connected
+		if !irc.fullyConnected {
+			irc.fullyConnected = true
+			if irc.Debug {
+				irc.Log.Printf("Setting fullyConnected=true due to PRIVMSG event\n")
+			}
+		}
+		irc.Unlock()
+	})
+
+	// Instead of using a goroutine with sleep, we'll check the timeout in GetNickStatus
+	// This avoids potential goroutine leaks in tests and ensures the timeout is checked
+	// only when needed
+
 	// DCC Chat support
 	irc.addDCCChatCallback()
 
