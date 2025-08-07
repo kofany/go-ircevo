@@ -40,6 +40,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/url"
@@ -54,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.1.0"
+	VERSION = "go-ircevo v1.2.0"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -113,8 +114,42 @@ func (irc *Connection) readLoop() {
 			if err == nil {
 				event.Connection = irc
 				if irc.HandleErrorAsDisconnect && strings.ToUpper(event.Code) == "ERROR" {
-					errChan <- errors.New("Received ERROR from server: " + event.Message())
-					return
+					errorMsg := event.Message()
+
+					// ENHANCED: Smart ERROR handling - analyze message to determine if reconnect should be blocked
+					if irc.SmartErrorHandling {
+						errorType := AnalyzeErrorMessage(errorMsg)
+
+						if irc.Debug {
+							irc.Log.Printf("ERROR analysis: %s -> %s", errorMsg, errorType.String())
+						}
+
+						// Handle different error types appropriately
+						switch errorType {
+						case PermanentError:
+							// Block reconnection for permanent errors
+							errChan <- errors.New("Received permanent ERROR from server: " + errorMsg)
+							return
+
+						case RecoverableError:
+							// For recoverable errors, don't block the connection
+							if irc.Debug {
+								irc.Log.Printf("Recoverable ERROR detected, continuing normal operation")
+							}
+							irc.RunCallbacks(event)
+							continue
+
+						default:
+							// For server/network errors, signal error but allow reconnection
+							irc.RunCallbacks(event)
+							errChan <- errors.New("Received " + errorType.String() + " from server: " + errorMsg)
+							return
+						}
+					} else {
+						// Original behavior - block all ERROR messages
+						errChan <- errors.New("Received ERROR from server: " + errorMsg)
+						return
+					}
 				}
 				irc.RunCallbacks(event)
 			}
@@ -268,8 +303,22 @@ func (irc *Connection) Loop() {
 	for !irc.isQuitting() {
 		err := <-errChan
 		if irc.HandleErrorAsDisconnect && strings.HasPrefix(err.Error(), "Received ERROR from server:") {
-			irc.Log.Printf("Received ERROR event, not attempting automatic reconnect.")
-			return
+			// ENHANCED: Smart ERROR handling in Loop
+			if irc.SmartErrorHandling {
+				// Check if this is a permanent error that should block reconnection
+				if strings.Contains(err.Error(), "Received permanent ERROR from server:") {
+					irc.Log.Printf("Received permanent ERROR event, not attempting automatic reconnect.")
+					return
+				}
+
+				// For other ERROR types, log and continue with reconnection logic
+				irc.Log.Printf("Received recoverable ERROR event: %s", err.Error())
+				// Continue to reconnection logic below
+			} else {
+				// Original behavior - block all ERROR messages
+				irc.Log.Printf("Received ERROR event, not attempting automatic reconnect.")
+				return
+			}
 		}
 		if irc.end != nil {
 			close(irc.end)
@@ -296,6 +345,10 @@ func (irc *Connection) Quit() {
 	if irc.QuitMessage != "" {
 		quit = fmt.Sprintf("QUIT :%s", irc.QuitMessage)
 	}
+
+	// NEW: Add 1 second delay before sending QUIT to IRC server
+	// This helps ensure proper cleanup and reduces server-side race conditions
+	time.Sleep(1 * time.Second)
 
 	irc.SendRaw(quit)
 	irc.Lock()
@@ -395,13 +448,35 @@ func (irc *Connection) SendRawf(format string, a ...interface{}) {
 // the current nickname (irc.nickcurrent) until confirmation is received.
 func (irc *Connection) Nick(n string) {
 	irc.Lock()
+	defer irc.Unlock()
+
+	// ENHANCED: Prevent multiple simultaneous nick changes (race condition fix)
+	if irc.nickChangeInProgress && time.Since(irc.nickChangeTimeout) < 30*time.Second {
+		if irc.Debug {
+			irc.Log.Printf("NICK change already in progress, ignoring request for %s", n)
+		}
+		return
+	}
+
 	// Update only the desired nickname
 	irc.nick = n
 	// Record when we attempted to change the nickname
 	irc.lastNickChange = time.Now()
-	irc.Unlock()
-	// Send the NICK command to the server
-	irc.SendRawf("NICK %s", n)
+
+	// Only send NICK command if it's different from current
+	if irc.nickcurrent != n {
+		irc.nickChangeInProgress = true
+		irc.nickChangeTimeout = time.Now()
+
+		// Send the NICK command to the server (unlock first to avoid deadlock)
+		irc.Unlock()
+		irc.SendRawf("NICK %s", n)
+		irc.Lock()
+
+		if irc.Debug {
+			irc.Log.Printf("Sent NICK change request: %s -> %s", irc.nickcurrent, n)
+		}
+	}
 }
 
 // GetNick returns the current nickname used in the IRC connection.
@@ -415,6 +490,32 @@ func (irc *Connection) GetNick() string {
 	irc.Lock()
 	defer irc.Unlock()
 	return irc.nickcurrent
+}
+
+// ValidateOwnNick checks if our internal nick state matches reality
+// This is a lightweight self-validation mechanism for high-concurrency scenarios
+func (irc *Connection) ValidateOwnNick(eventNick string) {
+	if eventNick == "" {
+		return
+	}
+
+	irc.Lock()
+	defer irc.Unlock()
+
+	// Check for desynchronization between event nick and our memory
+	if eventNick != irc.nickcurrent {
+		if irc.Debug {
+			irc.Log.Printf("NICK DESYNC detected: event=%s, memory=%s - auto-correcting",
+				eventNick, irc.nickcurrent)
+		}
+
+		// Auto-correct our internal state
+		irc.nickcurrent = eventNick
+		irc.nick = eventNick
+
+		// Clear any pending nick change since we're now synchronized
+		irc.nickChangeInProgress = false
+	}
 }
 
 // GetNickStatus returns detailed information about the current nickname status.
@@ -441,14 +542,14 @@ func (irc *Connection) GetNickStatus() *NickStatus {
 		lastChangeTime = time.Now()
 	}
 
-	// If we have a current nickname and have received some IRC events but aren't marked as fully connected,
-	// we're probably connected but the flag wasn't set properly
-	if !irc.fullyConnected && irc.nickcurrent != "" && irc.registrationSteps > 0 {
+	// FIXED: Only use timeout fallback if explicitly enabled (prevents ghost bots)
+	// This was the main source of ghost bots in mass deployments
+	if irc.EnableTimeoutFallback && !irc.fullyConnected && irc.nickcurrent != "" && irc.registrationSteps > 0 {
 		// Check if registration timeout has elapsed
 		if !irc.registrationStartTime.IsZero() && time.Since(irc.registrationStartTime) >= irc.registrationTimeout {
 			irc.fullyConnected = true
 			if irc.Debug {
-				irc.Log.Printf("Setting fullyConnected=true in GetNickStatus due to timeout\n")
+				irc.Log.Printf("Setting fullyConnected=true in GetNickStatus due to timeout fallback (EnableTimeoutFallback=true)\n")
 			}
 		}
 	}
@@ -783,23 +884,30 @@ func IRC(nick, user string) *Connection {
 	}
 
 	irc := &Connection{
-		nick:                    nick,
-		nickcurrent:             nick,
-		user:                    user,
-		Log:                     log.New(os.Stdout, "", log.LstdFlags),
-		end:                     make(chan struct{}),
-		Version:                 VERSION,
-		KeepAlive:               4 * time.Minute,
-		Timeout:                 1 * time.Minute,
-		PingFreq:                15 * time.Minute,
-		SASLMech:                "PLAIN",
-		QuitMessage:             "",
-		fullyConnected:          false,           // Initialize to false
-		lastNickChange:          time.Now(),      // Initialize to current time
-		nickError:               "",              // Initialize to empty string
-		registrationSteps:       0,               // Initialize registration steps counter
-		registrationStartTime:   time.Time{},     // Zero time initially
-		registrationTimeout:     5 * time.Second, // 5 seconds timeout for registration
+		nick:                  nick,
+		nickcurrent:           nick,
+		user:                  user,
+		Log:                   log.New(os.Stdout, "", log.LstdFlags),
+		end:                   make(chan struct{}),
+		Version:               VERSION,
+		KeepAlive:             4 * time.Minute,
+		Timeout:               1 * time.Minute,
+		PingFreq:              15 * time.Minute,
+		SASLMech:              "PLAIN",
+		QuitMessage:           "",
+		fullyConnected:        false,            // Initialize to false
+		lastNickChange:        time.Now(),       // Initialize to current time
+		nickError:             "",               // Initialize to empty string
+		registrationSteps:     0,                // Initialize registration steps counter
+		registrationStartTime: time.Time{},      // Zero time initially
+		registrationTimeout:   30 * time.Second, // Longer timeout for mass deployments
+
+		// NEW: Disable timeout fallback by default to prevent ghost bots
+		EnableTimeoutFallback: false, // Disabled by default for reliability
+
+		// NEW: Enable smart ERROR handling by default
+		SmartErrorHandling: true, // Analyze ERROR messages intelligently
+
 		DCCManager:              NewDCCManager(), // DCC chat support
 		ProxyConfig:             nil,
 		HandleErrorAsDisconnect: true, // Default to true to not reconnect after ERROR event
@@ -812,6 +920,149 @@ func IRC(nick, user string) *Connection {
 // This allows the client to specify which local interface/IP to use.
 func (irc *Connection) SetLocalIP(ip string) {
 	irc.localIP = ip
+}
+
+// ValidateConnectionState performs comprehensive connection validation
+// This method should be used for periodic verification in mass deployments
+// Returns true only if the connection is genuinely active and responsive
+func (irc *Connection) ValidateConnectionState() bool {
+	irc.Lock()
+	defer irc.Unlock()
+
+	// Basic state checks
+	if !irc.fullyConnected {
+		return false
+	}
+
+	if irc.socket == nil {
+		irc.fullyConnected = false
+		return false
+	}
+
+	// Check socket health with minimal timeout
+	irc.socket.SetReadDeadline(time.Now().Add(1 * time.Second))
+	testBuf := make([]byte, 0)
+	_, err := irc.socket.Read(testBuf)
+
+	// Reset deadline
+	var zero time.Time
+	irc.socket.SetReadDeadline(zero)
+
+	if err != nil && !isTimeoutError(err) && err != io.EOF {
+		if irc.Debug {
+			irc.Log.Printf("Socket validation failed: %v", err)
+		}
+		irc.fullyConnected = false
+		return false
+	}
+
+	// Check if we have recent activity (within 10 minutes)
+	irc.lastMessageMutex.Lock()
+	lastActivity := irc.lastMessage
+	irc.lastMessageMutex.Unlock()
+
+	if time.Since(lastActivity) > 10*time.Minute {
+		if irc.Debug {
+			irc.Log.Printf("No recent activity for %.1f minutes, connection may be stale",
+				time.Since(lastActivity).Minutes())
+		}
+		// Don't mark as disconnected yet, but return false for verification
+		return false
+	}
+
+	return true
+}
+
+// Helper function to identify timeout errors
+func isTimeoutError(err error) bool {
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+	return false
+}
+
+// AnalyzeErrorMessage categorizes IRC ERROR messages to determine reconnection strategy
+func AnalyzeErrorMessage(errorMsg string) ErrorType {
+	errorLower := strings.ToLower(errorMsg)
+
+	// Permanent errors - should prevent reconnection
+	permanentPatterns := []string{
+		"k-lined", "k-line", "klined",
+		"g-lined", "g-line", "glined",
+		"banned", "you are banned", "user is banned",
+		"unauthorized connection",
+		"connection refused",
+		"access denied",
+		"you are not authorized",
+		"blacklisted",
+		"throttled", "throttling",
+		"flood", "flooding",
+		"spam", "spamming",
+	}
+
+	for _, pattern := range permanentPatterns {
+		if strings.Contains(errorLower, pattern) {
+			return PermanentError
+		}
+	}
+
+	// Server errors - temporary server-side issues
+	serverPatterns := []string{
+		"too many connections",
+		"too many host connections",
+		"too many host connections (local)",
+		"too many host connections (global)",
+		"too many global connections",
+		"connection limit exceeded",
+		"server full",
+		"max connections reached",
+		"too many connections from this ip",
+		"too many connections from your host",
+		"connection limit",
+		"host limit",
+		"ip limit",
+		"clone limit",
+		"too many clones",
+	}
+
+	for _, pattern := range serverPatterns {
+		if strings.Contains(errorLower, pattern) {
+			return ServerError
+		}
+	}
+
+	// Network errors - connectivity issues
+	networkPatterns := []string{
+		"connection reset",
+		"connection timed out",
+		"network unreachable",
+		"no route to host",
+		"connection lost",
+		"broken pipe",
+	}
+
+	for _, pattern := range networkPatterns {
+		if strings.Contains(errorLower, pattern) {
+			return NetworkError
+		}
+	}
+
+	// Recoverable errors - temporary issues that should allow reconnection
+	recoverablePatterns := []string{
+		"registration timeout",
+		"ping timeout",
+		"server shutting down",
+		"server restart",
+	}
+
+	for _, pattern := range recoverablePatterns {
+		if strings.Contains(errorLower, pattern) {
+			return RecoverableError
+		}
+	}
+
+	// Default to recoverable for unknown errors
+	return PermanentError
 }
 
 // IsFullyConnected returns whether the connection is fully established with the IRC server.

@@ -187,22 +187,44 @@ func TestFullyConnectedStatus(t *testing.T) {
 		t.Error("Expected fullyConnected to be true after PRIVMSG")
 	}
 
-	// Test GetNickStatus timeout mechanism
+	// Test GetNickStatus timeout mechanism (UPDATED for new behavior)
 	irccon.fullyConnected = false
 	irccon.registrationSteps = 1
 	irccon.registrationStartTime = time.Now().Add(-10 * time.Second)
 	irccon.registrationTimeout = 5 * time.Second
 
+	// UPDATED: Enable timeout fallback explicitly (disabled by default now)
+	irccon.EnableTimeoutFallback = true
+
 	// Get nick status to trigger the timeout check
 	status := irccon.GetNickStatus()
 
-	// Check if fullyConnected is true after timeout
+	// Check if fullyConnected is true after timeout (only when enabled)
 	if !irccon.IsFullyConnected() {
-		t.Error("Expected fullyConnected to be true after timeout")
+		t.Error("Expected fullyConnected to be true after timeout when EnableTimeoutFallback=true")
 	}
 
 	// Verify that the status reflects the correct state
 	if !status.Confirmed {
-		t.Error("Expected status.Confirmed to be true after timeout")
+		t.Error("Expected status.Confirmed to be true after timeout when EnableTimeoutFallback=true")
+	}
+
+	// Test that timeout fallback is disabled by default
+	irccon2 := IRC("testnick2", "testuser2")
+	irccon2.fullyConnected = false
+	irccon2.registrationSteps = 1
+	irccon2.registrationStartTime = time.Now().Add(-10 * time.Second)
+	irccon2.registrationTimeout = 5 * time.Second
+	// EnableTimeoutFallback should be false by default
+
+	status2 := irccon2.GetNickStatus()
+
+	// Should NOT be marked as connected when timeout fallback is disabled
+	if irccon2.IsFullyConnected() {
+		t.Error("Expected fullyConnected to remain false when EnableTimeoutFallback=false (default)")
+	}
+
+	if status2.Confirmed {
+		t.Error("Expected status.Confirmed to remain false when EnableTimeoutFallback=false (default)")
 	}
 }

@@ -60,31 +60,72 @@ type Connection struct {
 	RealName string // The real name we want to display.
 	// If zero-value defaults to the user.
 
-	socket                  net.Conn
-	pwrite                  chan string
-	end                     chan struct{}
-	nick                    string // The nickname we want.
-	nickcurrent             string // The nickname we currently have.
-	user                    string
-	events                  map[string]map[int]func(*Event)
-	eventsMutex             sync.Mutex
-	QuitMessage             string
-	lastMessage             time.Time
-	lastMessageMutex        sync.Mutex
-	VerboseCallbackHandler  bool
-	Log                     *log.Logger
-	stopped                 bool
-	quit                    bool
-	idCounter               int
-	localIP                 string        // Local IP to bind when connecting
-	fullyConnected          bool          // Indicates if the connection is fully established
-	lastNickChange          time.Time     // Timestamp of the last nickname change
-	nickError               string        // Last error related to nickname
-	registrationSteps       int           // Counter for registration steps
-	registrationStartTime   time.Time     // Time when registration started
-	registrationTimeout     time.Duration // Timeout for registration process
-	DCCManager              *DCCManager   // DCC chat support
-	HandleErrorAsDisconnect bool          // Fix reconnection loop after ERROR event if user have own reconnect implementation
+	socket                 net.Conn
+	pwrite                 chan string
+	end                    chan struct{}
+	nick                   string // The nickname we want.
+	nickcurrent            string // The nickname we currently have.
+	user                   string
+	events                 map[string]map[int]func(*Event)
+	eventsMutex            sync.Mutex
+	QuitMessage            string
+	lastMessage            time.Time
+	lastMessageMutex       sync.Mutex
+	VerboseCallbackHandler bool
+	Log                    *log.Logger
+	stopped                bool
+	quit                   bool
+	idCounter              int
+	localIP                string        // Local IP to bind when connecting
+	fullyConnected         bool          // Indicates if the connection is fully established
+	lastNickChange         time.Time     // Timestamp of the last nickname change
+	nickError              string        // Last error related to nickname
+	registrationSteps      int           // Counter for registration steps
+	registrationStartTime  time.Time     // Time when registration started
+	registrationTimeout    time.Duration // Timeout for registration process
+
+	// NEW: Configuration for timeout fallback behavior
+	EnableTimeoutFallback bool // Allow timeout-based connection detection (default: false)
+
+	// NEW: NICK change coordination to prevent race conditions
+	nickChangeInProgress bool      // Indicates if a NICK change is currently in progress
+	nickChangeTimeout    time.Time // Timeout for NICK change operations
+
+	DCCManager              *DCCManager // DCC chat support
+	HandleErrorAsDisconnect bool        // Fix reconnection loop after ERROR event if user have own reconnect implementation
+
+	// NEW: Smart ERROR handling - analyze ERROR messages to determine if reconnect should be attempted
+	SmartErrorHandling bool // Enable intelligent ERROR message analysis (default: true)
+}
+
+// ErrorType represents different categories of IRC ERROR messages
+type ErrorType int
+
+const (
+	// RecoverableError - temporary issues that should allow reconnection
+	RecoverableError ErrorType = iota
+	// PermanentError - permanent bans/blocks that should prevent reconnection
+	PermanentError
+	// ServerError - server-side issues (too many connections, etc.)
+	ServerError
+	// NetworkError - network connectivity issues
+	NetworkError
+)
+
+// String returns a string representation of the ErrorType
+func (e ErrorType) String() string {
+	switch e {
+	case RecoverableError:
+		return "RecoverableError"
+	case PermanentError:
+		return "PermanentError"
+	case ServerError:
+		return "ServerError"
+	case NetworkError:
+		return "NetworkError"
+	default:
+		return "UnknownError"
+	}
 }
 
 type ProxyConfig struct {

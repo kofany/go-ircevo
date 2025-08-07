@@ -223,16 +223,8 @@ func (irc *Connection) setupCallbacks() {
 	irc.AddCallback("PING", func(e *Event) {
 		irc.SendRaw("PONG :" + e.Message())
 
-		// If we're receiving PING events, we must be connected to the server
-		irc.Lock()
-		// If we're not marked as fully connected but we're receiving PING events
-		if !irc.fullyConnected && irc.registrationSteps > 0 {
-			irc.fullyConnected = true
-			if irc.Debug {
-				irc.Log.Printf("Setting fullyConnected=true due to PING event\n")
-			}
-		}
-		irc.Unlock()
+		// REMOVED: Activity-based connection detection (caused false positives in mass deployments)
+		// PING events alone don't guarantee full IRC registration completion
 	})
 
 	// Version handler
@@ -261,7 +253,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.SendRawf("NOTICE %s :\x01%s\x01", e.Nick, e.Message())
 	})
 
-	// Handle nickname in use (433)
+	// Handle nickname in use (433) - RFC 2812 compliant
 	irc.AddCallback("433", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
@@ -269,17 +261,28 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname already in use"
 
-		if !irc.fullyConnected {
-			if irc.nickcurrent == "" {
-				irc.nickcurrent = irc.nick
+		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		// Check if this error is for our desired nickname
+		if len(e.Arguments) > 1 {
+			attemptedNick := e.Arguments[1]
+
+			// If this was our current desired nick, we need to try a different one
+			if attemptedNick == irc.nick {
+				if irc.nickcurrent == "" {
+					irc.nickcurrent = irc.nick
+				}
+				irc.modifyNick()
+				irc.lastNickChange = time.Now()
+				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if irc.Debug {
+					irc.Log.Printf("NICK 433 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+				}
 			}
-			irc.modifyNick()
-			irc.lastNickChange = time.Now()
-			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
 
-	// Handle unavailable resource (437)
+	// Handle unavailable resource (437) - RFC 2812 compliant
 	irc.AddCallback("437", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
@@ -287,17 +290,26 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname temporarily unavailable"
 
-		if !irc.fullyConnected {
-			if irc.nickcurrent == "" {
-				irc.nickcurrent = irc.nick
+		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		if len(e.Arguments) > 1 {
+			attemptedNick := e.Arguments[1]
+
+			if attemptedNick == irc.nick {
+				if irc.nickcurrent == "" {
+					irc.nickcurrent = irc.nick
+				}
+				irc.modifyNick()
+				irc.lastNickChange = time.Now()
+				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if irc.Debug {
+					irc.Log.Printf("NICK 437 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+				}
 			}
-			irc.modifyNick()
-			irc.lastNickChange = time.Now()
-			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
 
-	// Handle no nickname given (431)
+	// Handle no nickname given (431) - RFC 2812 compliant
 	irc.AddCallback("431", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
@@ -305,17 +317,22 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "No nickname given"
 
-		if !irc.fullyConnected {
-			if irc.nickcurrent == "" {
-				irc.nickcurrent = irc.nick
-			}
-			irc.modifyNick()
+		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		// For 431, we should always try to send a valid nickname
+		if irc.nickcurrent == "" {
+			irc.nickcurrent = irc.nick
+		}
+		if irc.nick != "" {
 			irc.lastNickChange = time.Now()
-			irc.SendRawf("NICK %s", irc.nickcurrent)
+			irc.SendRawf("NICK %s", irc.nick)
+
+			if irc.Debug {
+				irc.Log.Printf("NICK 431 error, resending nick %s (connected: %v)", irc.nick, irc.fullyConnected)
+			}
 		}
 	})
 
-	// Handle erroneous nickname (432)
+	// Handle erroneous nickname (432) - RFC 2812 compliant
 	irc.AddCallback("432", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
@@ -323,18 +340,27 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Erroneous nickname"
 
-		if !irc.fullyConnected {
-			if irc.nickcurrent == "" {
-				irc.nickcurrent = irc.nick
+		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		if len(e.Arguments) > 1 {
+			attemptedNick := e.Arguments[1]
+
+			if attemptedNick == irc.nick || attemptedNick == irc.nickcurrent {
+				if irc.nickcurrent == "" {
+					irc.nickcurrent = irc.nick
+				}
+				// Add prefix 'Err' to try a different nickname
+				irc.nickcurrent = "Err" + irc.nickcurrent
+				irc.lastNickChange = time.Now()
+				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if irc.Debug {
+					irc.Log.Printf("NICK 432 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+				}
 			}
-			// Add prefix 'Err' to try a different nickname
-			irc.nickcurrent = "Err" + irc.nickcurrent
-			irc.lastNickChange = time.Now()
-			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
 
-	// Handle nickname collision (436)
+	// Handle nickname collision (436) - RFC 2812 compliant
 	irc.AddCallback("436", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
@@ -342,17 +368,26 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname collision"
 
-		if !irc.fullyConnected {
-			if irc.nickcurrent == "" {
-				irc.nickcurrent = irc.nick
+		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		if len(e.Arguments) > 1 {
+			attemptedNick := e.Arguments[1]
+
+			if attemptedNick == irc.nick {
+				if irc.nickcurrent == "" {
+					irc.nickcurrent = irc.nick
+				}
+				irc.modifyNick()
+				irc.lastNickChange = time.Now()
+				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if irc.Debug {
+					irc.Log.Printf("NICK 436 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+				}
 			}
-			irc.modifyNick()
-			irc.lastNickChange = time.Now()
-			irc.SendRawf("NICK %s", irc.nickcurrent)
 		}
 	})
 
-	// Handle restricted nickname (484)
+	// Handle restricted nickname (484) - RFC 2812 compliant
 	irc.AddCallback("484", func(e *Event) {
 		irc.Lock()
 		defer irc.Unlock()
@@ -360,9 +395,13 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Restricted nickname"
 
-		if !irc.fullyConnected {
-			// Keep the current nickname and do not attempt to change it further
+		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		// For 484, we typically don't retry as the nickname is restricted
+		// Just log the error for debugging
+		if irc.Debug {
+			irc.Log.Printf("NICK 484 error: Restricted nickname (connected: %v)", irc.fullyConnected)
 		}
+		// Keep the current nickname and do not attempt to change it further
 	})
 
 	// Handle PONG responses
@@ -388,15 +427,22 @@ func (irc *Connection) setupCallbacks() {
 			if newNick != "" {
 				// Update current nickname to the new one
 				irc.nickcurrent = newNick
-				// Only update desired nickname if it matches the old one
-				// This preserves any pending desired nickname changes
-				if irc.nick == e.Nick {
-					irc.nick = newNick
-				}
+
+				// ENHANCED: Clear nick change in progress flag (race condition fix)
+				irc.nickChangeInProgress = false
+
+				// FIXED: Always update desired nickname on successful change
+				// This ensures synchronization between desired and current nick
+				irc.nick = newNick
+
 				// Update the last nickname change time
 				irc.lastNickChange = time.Now()
 				// Clear any nickname error since the change was successful
 				irc.nickError = ""
+
+				if irc.Debug {
+					irc.Log.Printf("NICK change confirmed: %s -> %s", e.Nick, newNick)
+				}
 			}
 		}
 	})
@@ -492,76 +538,47 @@ func (irc *Connection) setupCallbacks() {
 		}
 		irc.Unlock()
 	})
-	// Handle JOIN events - if we're joining channels, we must be connected
+	// Handle JOIN events
 	irc.AddCallback("JOIN", func(e *Event) {
-		// If this is our own JOIN event
-		if e.Nick == irc.nickcurrent {
-			irc.Lock()
-			// If we're receiving JOIN events but aren't marked as fully connected
-			if !irc.fullyConnected {
-				irc.fullyConnected = true
-				if irc.Debug {
-					irc.Log.Printf("Setting fullyConnected=true due to JOIN event\n")
-				}
-			}
-			irc.Unlock()
+		// REMOVED: Activity-based connection detection (caused false positives)
+		// JOIN events can occur during reconnection before full registration
+		// Only handle JOIN logic here, not connection state
+
+		// NEW: Lightweight self-validation for our own nick
+		if e.Nick != "" {
+			irc.ValidateOwnNick(e.Nick)
 		}
 	})
 
-	// Handle PART events - if we're parting channels, we must be connected
+	// Handle PART events
 	irc.AddCallback("PART", func(e *Event) {
-		// If this is our own PART event
-		if e.Nick == irc.nickcurrent {
-			irc.Lock()
-			// If we're receiving PART events but aren't marked as fully connected
-			if !irc.fullyConnected {
-				irc.fullyConnected = true
-				if irc.Debug {
-					irc.Log.Printf("Setting fullyConnected=true due to PART event\n")
-				}
-			}
-			irc.Unlock()
+		// REMOVED: Activity-based connection detection (caused false positives)
+		// PART events can occur during reconnection before full registration
+		// Only handle PART logic here, not connection state
+
+		// NEW: Lightweight self-validation for our own nick
+		if e.Nick != "" {
+			irc.ValidateOwnNick(e.Nick)
 		}
 	})
 
-	// Handle MODE events - if we're receiving mode changes, we must be connected
+	// Handle MODE events
 	irc.AddCallback("MODE", func(e *Event) {
-		// If we have arguments and the first one is our nickname or a channel we're in
-		if len(e.Arguments) > 0 {
-			irc.Lock()
-			// If the mode change is for our nickname
-			if e.Arguments[0] == irc.nickcurrent {
-				// If we're receiving MODE events but aren't marked as fully connected
-				if !irc.fullyConnected {
-					irc.fullyConnected = true
-					if irc.Debug {
-						irc.Log.Printf("Setting fullyConnected=true due to MODE event for our nick\n")
-					}
-				}
-			} else if e.Arguments[0][0] == '#' || e.Arguments[0][0] == '&' {
-				// If it's a channel mode change and we're not marked as fully connected
-				if !irc.fullyConnected {
-					irc.fullyConnected = true
-					if irc.Debug {
-						irc.Log.Printf("Setting fullyConnected=true due to channel MODE event\n")
-					}
-				}
-			}
-			irc.Unlock()
-		}
+		// REMOVED: Activity-based connection detection (caused false positives)
+		// MODE events can occur during reconnection before full registration
+		// Only handle MODE logic here, not connection state
 	})
 
-	// Handle PRIVMSG events - if we're receiving messages, we must be connected
+	// Handle PRIVMSG events
 	irc.AddCallback("PRIVMSG", func(e *Event) {
-		irc.Lock()
-		// If we're receiving PRIVMSG events but aren't marked as fully connected
-		if !irc.fullyConnected {
-			irc.fullyConnected = true
-			if irc.Debug {
-				irc.Log.Printf("Setting fullyConnected=true due to PRIVMSG event\n")
-			}
+		// REMOVED: Activity-based connection detection (caused false positives in mass deployments)
+		// PRIVMSG can arrive from buffers/delays after reconnection, before full registration
+		// This was the main source of false positives with 500+ concurrent connections
+
+		// NEW: Lightweight self-validation for our own nick
+		if e.Nick != "" {
+			irc.ValidateOwnNick(e.Nick)
 		}
-		irc.Unlock()
 	})
 
 	// Instead of using a goroutine with sleep, we'll check the timeout in GetNickStatus
