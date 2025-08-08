@@ -553,48 +553,22 @@ func (irc *Connection) setupCallbacks() {
 		// REMOVED: Activity-based connection detection (caused false positives)
 		// JOIN events can occur during reconnection before full registration
 		// Only handle JOIN logic here, not connection state
-
-		// NEW: Lightweight self-validation for our own nick
-		if e.Nick != "" {
-			irc.ValidateOwnNick(e.Nick)
-		}
 	})
 
 	// Handle PART events
 	irc.AddCallback("PART", func(e *Event) {
-		// REMOVED: Activity-based connection detection (caused false positives)
-		// PART events can occur during reconnection before full registration
-		// Only handle PART logic here, not connection state
 
-		// NEW: Lightweight self-validation for our own nick
-		if e.Nick != "" {
-			irc.ValidateOwnNick(e.Nick)
-		}
 	})
 
 	// Handle MODE events
 	irc.AddCallback("MODE", func(e *Event) {
-		// REMOVED: Activity-based connection detection (caused false positives)
-		// MODE events can occur during reconnection before full registration
-		// Only handle MODE logic here, not connection state
+
 	})
 
 	// Handle PRIVMSG events
 	irc.AddCallback("PRIVMSG", func(e *Event) {
-		// REMOVED: Activity-based connection detection (caused false positives in mass deployments)
-		// PRIVMSG can arrive from buffers/delays after reconnection, before full registration
-		// This was the main source of false positives with 500+ concurrent connections
 
-		// NEW: Lightweight self-validation for our own nick
-		if e.Nick != "" {
-			irc.ValidateOwnNick(e.Nick)
-		}
 	})
-
-	// Instead of using a goroutine with sleep, we'll check the timeout in GetNickStatus
-	// This avoids potential goroutine leaks in tests and ensures the timeout is checked
-	// only when needed
-
 	// DCC Chat support
 	irc.addDCCChatCallback()
 

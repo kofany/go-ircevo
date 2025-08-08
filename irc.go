@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.0"
+    VERSION = "go-ircevo v1.2.2"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -132,12 +132,13 @@ func (irc *Connection) readLoop() {
 							return
 
 						case RecoverableError:
-							// For recoverable errors, don't block the connection
+							// Treat recoverable errors as disconnect triggers to allow controlled reconnects
 							if irc.Debug {
-								irc.Log.Printf("Recoverable ERROR detected, continuing normal operation")
+								irc.Log.Printf("Recoverable ERROR detected, will attempt controlled reconnect")
 							}
 							irc.RunCallbacks(event)
-							continue
+							errChan <- errors.New("Received RecoverableError from server: " + errorMsg)
+							return
 
 						default:
 							// For server/network errors, signal error but allow reconnection
@@ -302,22 +303,20 @@ func (irc *Connection) Loop() {
 	errChan := irc.ErrorChan()
 	for !irc.isQuitting() {
 		err := <-errChan
-		if irc.HandleErrorAsDisconnect && strings.HasPrefix(err.Error(), "Received ERROR from server:") {
-			// ENHANCED: Smart ERROR handling in Loop
-			if irc.SmartErrorHandling {
-				// Check if this is a permanent error that should block reconnection
-				if strings.Contains(err.Error(), "Received permanent ERROR from server:") {
-					irc.Log.Printf("Received permanent ERROR event, not attempting automatic reconnect.")
+		// Decide reconnection strategy based on error content
+		errStr := err.Error()
+		if irc.HandleErrorAsDisconnect {
+			// Permanent errors should not reconnect
+			if strings.Contains(errStr, "Received permanent ERROR from server:") {
+				irc.Log.Printf("Received permanent ERROR event, not attempting automatic reconnect.")
+				return
+			}
+			// Limit recoverable reconnection attempts if configured
+			if strings.Contains(errStr, "RecoverableError") {
+				if irc.MaxRecoverableReconnects > 0 && irc.recoverableReconnects >= irc.MaxRecoverableReconnects {
+					irc.Log.Printf("Max recoverable reconnect attempts reached (%d); stopping.", irc.MaxRecoverableReconnects)
 					return
 				}
-
-				// For other ERROR types, log and continue with reconnection logic
-				irc.Log.Printf("Received recoverable ERROR event: %s", err.Error())
-				// Continue to reconnection logic below
-			} else {
-				// Original behavior - block all ERROR messages
-				irc.Log.Printf("Received ERROR event, not attempting automatic reconnect.")
-				return
 			}
 		}
 		if irc.end != nil {
@@ -326,11 +325,17 @@ func (irc *Connection) Loop() {
 		irc.Wait()
 		for !irc.isQuitting() {
 			irc.Log.Printf("Error, disconnected: %s\n", err)
+			// Track recoverable reconnect attempts
+			if strings.Contains(errStr, "RecoverableError") {
+				irc.recoverableReconnects++
+			}
 			if err = irc.Reconnect(); err != nil {
 				irc.Log.Printf("Error while reconnecting: %s\n", err)
 				time.Sleep(60 * time.Second)
 			} else {
 				errChan = irc.ErrorChan()
+				// Reset counters after successful reconnect
+				irc.recoverableReconnects = 0
 				break
 			}
 		}
@@ -490,32 +495,6 @@ func (irc *Connection) GetNick() string {
 	irc.Lock()
 	defer irc.Unlock()
 	return irc.nickcurrent
-}
-
-// ValidateOwnNick checks if our internal nick state matches reality
-// This is a lightweight self-validation mechanism for high-concurrency scenarios
-func (irc *Connection) ValidateOwnNick(eventNick string) {
-	if eventNick == "" {
-		return
-	}
-
-	irc.Lock()
-	defer irc.Unlock()
-
-	// Check for desynchronization between event nick and our memory
-	if eventNick != irc.nickcurrent {
-		if irc.Debug {
-			irc.Log.Printf("NICK DESYNC detected: event=%s, memory=%s - auto-correcting",
-				eventNick, irc.nickcurrent)
-		}
-
-		// Auto-correct our internal state
-		irc.nickcurrent = eventNick
-		irc.nick = eventNick
-
-		// Clear any pending nick change since we're now synchronized
-		irc.nickChangeInProgress = false
-	}
 }
 
 // GetNickStatus returns detailed information about the current nickname status.
@@ -977,6 +956,9 @@ func IRC(nick, user string) *Connection {
 		CapVersion:              "302", // Use CAP LS 302 by default
 		RegistrationAfterCapEnd: false, // Default to compat mode (send NICK/USER during CAP)
 		Respect020Pacing:        true,  // Be nice to networks that send 020
+
+		// NEW: Default limit of 3 recoverable reconnect attempts
+		MaxRecoverableReconnects: 3,
 	}
 	irc.setupCallbacks()
 	return irc

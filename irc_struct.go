@@ -104,6 +104,13 @@ type Connection struct {
 
 	// NEW: Smart ERROR handling - analyze ERROR messages to determine if reconnect should be attempted
 	SmartErrorHandling bool // Enable intelligent ERROR message analysis (default: true)
+
+	// NEW: Limit the number of reconnection attempts after a RecoverableError
+	// 0 means unlimited attempts (default). Set to a positive value to cap retries.
+	MaxRecoverableReconnects int
+
+	// internal counter for recoverable reconnect attempts within current session
+	recoverableReconnects int
 }
 
 // ErrorType represents different categories of IRC ERROR messages

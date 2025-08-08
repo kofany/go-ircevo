@@ -1,0 +1,27 @@
+---
+description: AI rules derived by SpecStory from the project AI interaction history
+globs: *
+---
+
+## HEADERS
+
+## TECH STACK
+
+## PROJECT DOCUMENTATION & CONTEXT SYSTEM
+
+## CODING STANDARDS
+
+### General
+
+*   Avoid unnecessary use of `fmt.Sprintf`. Use direct string concatenation instead for better performance.
+
+### Go Specific
+
+*   When dealing with IPv6 addresses in `net.Dial`, ensure they are enclosed in square brackets: `[%s]:%d`. IPv4 addresses should use the standard `%s:%d` format.
+*   Avoid using the deprecated `rand.Seed` function. As of Go 1.20, use `rand.New(rand.NewSource(time.Now().UnixNano()))` to create a local random generator. When creating random strings, pass this random generator to the function.
+
+## DEBUGGING
+
+## TESTING
+
+## WORKFLOW & RELEASE RULES
