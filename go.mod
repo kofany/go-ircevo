@@ -7,3 +7,5 @@ require (
 	golang.org/x/text v0.26.0
 	h12.io/socks v1.0.3
 )
+
+replace github.com/kofany/go-ircevo => .

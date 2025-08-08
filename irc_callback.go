@@ -467,6 +467,16 @@ func (irc *Connection) setupCallbacks() {
 		irc.Unlock()
 	})
 
+	// Handle server pacing notice (some networks use 020)
+	irc.AddCallback("020", func(e *Event) {
+		if irc.Respect020Pacing {
+			irc.Lock()
+			irc.got020 = true
+			irc.last020 = time.Now()
+			irc.Unlock()
+		}
+	})
+
 	// Handle RPL_YOURHOST (002)
 	irc.AddCallback("002", func(e *Event) {
 		irc.Lock()

@@ -759,13 +759,7 @@ func (irc *Connection) Connect(server string) error {
 		return err
 	}
 
-	realname := irc.user
-	if irc.RealName != "" {
-		realname = irc.RealName
-	}
-	irc.pwrite <- "CAP LS 302\r\n"
-	irc.pwrite <- "NICK " + irc.nick + "\r\n"
-	irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
+	// Registration will be sent automatically during CAP negotiation
 	return nil
 }
 
@@ -797,32 +791,71 @@ func (irc *Connection) negotiateCaps() error {
 	}
 
 	if len(irc.RequestCaps) == 0 {
+		// No capabilities to negotiate: send registration automatically
+		irc.Lock()
+		if !irc.sentRegistration {
+			respectPacing := irc.Respect020Pacing && irc.got020
+			realname := irc.user
+			if irc.RealName != "" {
+				realname = irc.RealName
+			}
+			irc.sentRegistration = true
+			irc.Unlock()
+			if respectPacing {
+				time.Sleep(250 * time.Millisecond)
+			}
+			irc.pwrite <- "NICK " + irc.nick + "\r\n"
+			irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
+		} else {
+			irc.Unlock()
+		}
 		return nil
 	}
 
 	cap_chan := make(chan bool, len(irc.RequestCaps))
 	id := irc.AddCallback("CAP", func(e *Event) {
-		if len(e.Arguments) != 3 {
+		if len(e.Arguments) < 2 {
 			return
 		}
 		command := e.Arguments[1]
 
 		if command == "LS" {
+			// When we see LS, server is ready; send registration now if not sent yet
 			missing_caps := len(irc.RequestCaps)
-			for _, cap_name := range strings.Split(e.Arguments[2], " ") {
-				for _, req_cap := range irc.RequestCaps {
-					if cap_name == req_cap {
-						irc.pwrite <- fmt.Sprintf("CAP REQ :%s\r\n", cap_name)
-						missing_caps--
+			if len(e.Arguments) >= 3 {
+				for _, cap_name := range strings.Split(e.Arguments[2], " ") {
+					for _, req_cap := range irc.RequestCaps {
+						if cap_name == req_cap {
+							irc.pwrite <- fmt.Sprintf("CAP REQ :%s\r\n", cap_name)
+							missing_caps--
+						}
 					}
 				}
+			}
+			// try to send registration early once LS seen
+			irc.Lock()
+			if !irc.sentRegistration {
+				respectPacing := irc.Respect020Pacing && irc.got020
+				realname := irc.user
+				if irc.RealName != "" {
+					realname = irc.RealName
+				}
+				irc.sentRegistration = true
+				irc.Unlock()
+				if respectPacing {
+					time.Sleep(250 * time.Millisecond)
+				}
+				irc.pwrite <- "NICK " + irc.nick + "\r\n"
+				irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
+			} else {
+				irc.Unlock()
 			}
 
 			for i := 0; i < missing_caps; i++ {
 				cap_chan <- true
 			}
 		} else if command == "ACK" || command == "NAK" {
-			for _, cap_name := range strings.Split(strings.TrimSpace(e.Arguments[2]), " ") {
+			for _, cap_name := range strings.Split(strings.TrimSpace(e.Arguments[len(e.Arguments)-1]), " ") {
 				if cap_name == "" {
 					continue
 				}
@@ -836,7 +869,35 @@ func (irc *Connection) negotiateCaps() error {
 	})
 	negotiationCallbacks = append(negotiationCallbacks, CallbackID{"CAP", id})
 
-	irc.pwrite <- "CAP LS\r\n"
+	// Send CAP LS once, with configured version
+	if irc.CapVersion != "" {
+		irc.pwrite <- fmt.Sprintf("CAP LS %s\r\n", irc.CapVersion)
+	} else {
+		irc.pwrite <- "CAP LS\r\n"
+	}
+
+	// Fallback: if no CAP LS seen quickly (or handler didn't send registration),
+	// send NICK/USER automatically to avoid ping timeouts on some networks
+	go func() {
+		time.Sleep(800 * time.Millisecond)
+		irc.Lock()
+		if irc.sentRegistration {
+			irc.Unlock()
+			return
+		}
+		respectPacing := irc.Respect020Pacing && irc.got020
+		realname := irc.user
+		if irc.RealName != "" {
+			realname = irc.RealName
+		}
+		irc.sentRegistration = true
+		irc.Unlock()
+		if respectPacing {
+			time.Sleep(250 * time.Millisecond)
+		}
+		irc.pwrite <- "NICK " + irc.nick + "\r\n"
+		irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
+	}()
 
 	if irc.UseSASL {
 		select {
@@ -911,6 +972,11 @@ func IRC(nick, user string) *Connection {
 		DCCManager:              NewDCCManager(), // DCC chat support
 		ProxyConfig:             nil,
 		HandleErrorAsDisconnect: true, // Default to true to not reconnect after ERROR event
+
+		// NEW: CAP negotiation defaults
+		CapVersion:              "302", // Use CAP LS 302 by default
+		RegistrationAfterCapEnd: false, // Default to compat mode (send NICK/USER during CAP)
+		Respect020Pacing:        true,  // Be nice to networks that send 020
 	}
 	irc.setupCallbacks()
 	return irc

@@ -91,6 +91,14 @@ type Connection struct {
 	nickChangeInProgress bool      // Indicates if a NICK change is currently in progress
 	nickChangeTimeout    time.Time // Timeout for NICK change operations
 
+	// NEW: CAP negotiation behavior
+	CapVersion              string    // e.g., "302" or "" for plain CAP LS
+	RegistrationAfterCapEnd bool      // When true, send NICK/USER only after CAP END
+	Respect020Pacing        bool      // When true, add small backoff after numeric 020
+	got020                  bool      // internal: have we seen numeric 020
+	last020                 time.Time // internal: last time 020 was received
+	sentRegistration        bool      // internal: have we sent NICK/USER yet
+
 	DCCManager              *DCCManager // DCC chat support
 	HandleErrorAsDisconnect bool        // Fix reconnection loop after ERROR event if user have own reconnect implementation
 
