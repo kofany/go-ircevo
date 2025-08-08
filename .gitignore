@@ -4,3 +4,8 @@ all.txt
 opinia*
 .claude
 .gemini
+.specstory/
+.cursor/
+.cursor/rules/derived-cursor-rules.mdc
+/.cursor/rules
+/.cursor

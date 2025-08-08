@@ -25,3 +25,17 @@ globs: *
 ## TESTING
 
 ## WORKFLOW & RELEASE RULES
+
+*   After a `RecoverableError`, the library will attempt a reconnect, now with a default limit of 3 attempts.
+    *   This can be configured via `Connection.MaxRecoverableReconnects` (default 3; 0 = no limit).
+
+```go
+conn.MaxRecoverableReconnects = 0   // no limit (old behavior)
+conn.MaxRecoverableReconnects = 3   // e.g., exactly 3 attempts
+```
+
+*   If you are managing your own reconnects and wish to disable the library's automatic attempts:
+
+```go
+conn.HandleErrorAsDisconnect = false
+```
