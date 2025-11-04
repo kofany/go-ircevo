@@ -55,7 +55,7 @@ import (
 )
 
 const (
-    VERSION = "go-ircevo v1.2.2"
+	VERSION = "go-ircevo v1.2.2"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -279,9 +279,15 @@ func (irc *Connection) pingLoop() {
 			// Check if there's a pending nickname change
 			irc.Lock()
 			if irc.nick != irc.nickcurrent {
+				desiredNick := irc.nick
+				irc.nickPending = desiredNick
+				irc.nickChangeInProgress = true
+				irc.nickChangeTimeout = time.Now()
+				irc.Unlock()
 				// Send a NICK command to try to change to the desired nickname
 				// The actual change will only happen when the server confirms it
-				irc.SendRawf("NICK %s", irc.nick)
+				irc.SendRawf("NICK %s", desiredNick)
+				irc.Lock()
 			}
 			irc.Unlock()
 		case <-irc.end:
@@ -457,8 +463,13 @@ func (irc *Connection) Nick(n string) {
 
 	// ENHANCED: Prevent multiple simultaneous nick changes (race condition fix)
 	if irc.nickChangeInProgress && time.Since(irc.nickChangeTimeout) < 30*time.Second {
+		// Update desired nickname so the pingLoop can retry once the current change completes
+		irc.nick = n
+		irc.nickPending = n
+		irc.lastNickChange = time.Now()
+
 		if irc.Debug {
-			irc.Log.Printf("NICK change already in progress, ignoring request for %s", n)
+			irc.Log.Printf("NICK change already in progress, queuing desired nick %s", n)
 		}
 		return
 	}
@@ -472,6 +483,7 @@ func (irc *Connection) Nick(n string) {
 	if irc.nickcurrent != n {
 		irc.nickChangeInProgress = true
 		irc.nickChangeTimeout = time.Now()
+		irc.nickPending = n
 
 		// Send the NICK command to the server (unlock first to avoid deadlock)
 		irc.Unlock()
@@ -481,7 +493,12 @@ func (irc *Connection) Nick(n string) {
 		if irc.Debug {
 			irc.Log.Printf("Sent NICK change request: %s -> %s", irc.nickcurrent, n)
 		}
+		return
 	}
+
+	// No change needed; clear any pending state
+	irc.nickPending = ""
+	irc.nickChangeInProgress = false
 }
 
 // GetNick returns the current nickname used in the IRC connection.
@@ -582,6 +599,8 @@ func (irc *Connection) Disconnect() {
 	irc.fullyConnected = false
 	irc.registrationSteps = 0
 	irc.registrationStartTime = time.Time{}
+	irc.nickPending = ""
+	irc.nickChangeInProgress = false
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -608,6 +627,8 @@ func (irc *Connection) Reconnect() error {
 	irc.fullyConnected = false
 	irc.registrationSteps = 0
 	irc.registrationStartTime = time.Time{}
+	irc.nickPending = ""
+	irc.nickChangeInProgress = false
 	irc.Unlock()
 	irc.end = make(chan struct{})
 	return irc.Connect(irc.Server)
@@ -626,6 +647,8 @@ func (irc *Connection) Connect(server string) error {
 	irc.fullyConnected = false
 	irc.registrationSteps = 0
 	irc.registrationStartTime = time.Time{}
+	irc.nickPending = ""
+	irc.nickChangeInProgress = false
 	irc.Unlock()
 
 	// Make sure everything is ready for connection
@@ -779,6 +802,7 @@ func (irc *Connection) negotiateCaps() error {
 				realname = irc.RealName
 			}
 			irc.sentRegistration = true
+			irc.nickPending = irc.nick
 			irc.Unlock()
 			if respectPacing {
 				time.Sleep(250 * time.Millisecond)
@@ -870,6 +894,7 @@ func (irc *Connection) negotiateCaps() error {
 			realname = irc.RealName
 		}
 		irc.sentRegistration = true
+		irc.nickPending = irc.nick
 		irc.Unlock()
 		if respectPacing {
 			time.Sleep(250 * time.Millisecond)
