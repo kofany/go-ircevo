@@ -261,22 +261,30 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname already in use"
 
-		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
-		// Check if this error is for our desired nickname
+		// RFC 2812 Section 3.1.2: ERR_NICKNAMEINUSE indicates the nickname is already in use
+		// We need to try an alternative nickname
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			// If this was our current desired nick, we need to try a different one
-			if attemptedNick == irc.nick {
-				if irc.nickcurrent == "" {
-					irc.nickcurrent = irc.nick
-				}
-				irc.modifyNick()
+			// Check if the error is for a nick we're trying to get
+			if attemptedNick == irc.nick || attemptedNick == irc.nickPending {
+				// Generate alternative based on the rejected nickname
+				alternative := generateAlternativeNick(attemptedNick)
+				irc.nickPending = alternative
+				irc.nickChangeInProgress = true
+				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
-				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				// During initial registration (before 001), also update nickcurrent
+				// to keep track of what we're trying, since we don't have a confirmed nick yet
+				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+					irc.nickcurrent = alternative
+				}
+
+				irc.SendRawf("NICK %s", alternative)
 
 				if irc.Debug {
-					irc.Log.Printf("NICK 433 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+					irc.Log.Printf("NICK 433 error for %s, trying %s (fullyConnected=%v)", attemptedNick, alternative, irc.fullyConnected)
 				}
 			}
 		}
@@ -290,20 +298,24 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname temporarily unavailable"
 
-		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			if attemptedNick == irc.nick {
-				if irc.nickcurrent == "" {
-					irc.nickcurrent = irc.nick
-				}
-				irc.modifyNick()
+			if attemptedNick == irc.nick || attemptedNick == irc.nickPending {
+				alternative := generateAlternativeNick(attemptedNick)
+				irc.nickPending = alternative
+				irc.nickChangeInProgress = true
+				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
-				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+					irc.nickcurrent = alternative
+				}
+
+				irc.SendRawf("NICK %s", alternative)
 
 				if irc.Debug {
-					irc.Log.Printf("NICK 437 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+					irc.Log.Printf("NICK 437 error for %s, trying %s (fullyConnected=%v)", attemptedNick, alternative, irc.fullyConnected)
 				}
 			}
 		}
@@ -317,17 +329,17 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "No nickname given"
 
-		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
-		// For 431, we should always try to send a valid nickname
-		if irc.nickcurrent == "" {
-			irc.nickcurrent = irc.nick
-		}
+		// RFC 2812 Section 3.1.2: ERR_NONICKNAMEGIVEN means we forgot to send a nickname
+		// Resend the desired nickname
 		if irc.nick != "" {
+			irc.nickPending = irc.nick
+			irc.nickChangeInProgress = true
+			irc.nickChangeTimeout = time.Now()
 			irc.lastNickChange = time.Now()
 			irc.SendRawf("NICK %s", irc.nick)
 
 			if irc.Debug {
-				irc.Log.Printf("NICK 431 error, resending nick %s (connected: %v)", irc.nick, irc.fullyConnected)
+				irc.Log.Printf("NICK 431 error, resending nick %s (fullyConnected=%v)", irc.nick, irc.fullyConnected)
 			}
 		}
 	})
@@ -340,21 +352,25 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Erroneous nickname"
 
-		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
+		// RFC 2812 Section 3.1.2: ERR_ERRONEUSNICKNAME indicates the nickname is invalid
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			if attemptedNick == irc.nick || attemptedNick == irc.nickcurrent {
-				if irc.nickcurrent == "" {
-					irc.nickcurrent = irc.nick
-				}
-				// Add prefix 'Err' to try a different nickname
-				irc.nickcurrent = "Err" + irc.nickcurrent
+			if attemptedNick == irc.nick || attemptedNick == irc.nickPending || attemptedNick == irc.nickcurrent {
+				alternative := "Err" + attemptedNick
+				irc.nickPending = alternative
+				irc.nickChangeInProgress = true
+				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
-				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+					irc.nickcurrent = alternative
+				}
+
+				irc.SendRawf("NICK %s", alternative)
 
 				if irc.Debug {
-					irc.Log.Printf("NICK 432 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+					irc.Log.Printf("NICK 432 error for %s, trying %s (fullyConnected=%v)", attemptedNick, alternative, irc.fullyConnected)
 				}
 			}
 		}
@@ -368,20 +384,24 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname collision"
 
-		// FIXED: Handle error regardless of connection state (RFC 2812 requirement)
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			if attemptedNick == irc.nick {
-				if irc.nickcurrent == "" {
-					irc.nickcurrent = irc.nick
-				}
-				irc.modifyNick()
+			if attemptedNick == irc.nick || attemptedNick == irc.nickPending {
+				alternative := generateAlternativeNick(attemptedNick)
+				irc.nickPending = alternative
+				irc.nickChangeInProgress = true
+				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
-				irc.SendRawf("NICK %s", irc.nickcurrent)
+
+				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+					irc.nickcurrent = alternative
+				}
+
+				irc.SendRawf("NICK %s", alternative)
 
 				if irc.Debug {
-					irc.Log.Printf("NICK 436 error for %s, trying %s (connected: %v)", attemptedNick, irc.nickcurrent, irc.fullyConnected)
+					irc.Log.Printf("NICK 436 error for %s, trying %s (fullyConnected=%v)", attemptedNick, alternative, irc.fullyConnected)
 				}
 			}
 		}
@@ -430,10 +450,31 @@ func (irc *Connection) setupCallbacks() {
 
 				// ENHANCED: Clear nick change in progress flag (race condition fix)
 				irc.nickChangeInProgress = false
+				irc.nickPending = ""
 
-				// FIXED: Always update desired nickname on successful change
-				// This ensures synchronization between desired and current nick
-				irc.nick = newNick
+				// RFC COMPLIANT: Only update desired nick during initial registration (before 001)
+				// For post-registration changes, keep the desired nick so pingLoop can retry
+				// The 001 handler will update both nick and nickcurrent during initial registration
+				// This allows the pingLoop to automatically retry the desired nickname if we
+				// had to accept an alternative due to errors (e.g., nick collision)
+				if !irc.fullyConnected {
+					// During initial registration, accept whatever nick we get
+					irc.nick = newNick
+				} else {
+					// Post-registration: only update desired nick if we got exactly what we wanted
+					// This allows pingLoop to periodically retry if we got an alternative
+					if newNick == irc.nick {
+						// Success! We got the nick we wanted
+						if irc.Debug {
+							irc.Log.Printf("Successfully changed to desired nick: %s", newNick)
+						}
+					} else {
+						// We got an alternative (due to error recovery), keep retrying desired nick
+						if irc.Debug {
+							irc.Log.Printf("Got alternative nick %s, will keep retrying desired nick %s", newNick, irc.nick)
+						}
+					}
+				}
 
 				// Update the last nickname change time
 				irc.lastNickChange = time.Now()
@@ -441,7 +482,7 @@ func (irc *Connection) setupCallbacks() {
 				irc.nickError = ""
 
 				if irc.Debug {
-					irc.Log.Printf("NICK change confirmed: %s -> %s", e.Nick, newNick)
+					irc.Log.Printf("NICK change confirmed: %s -> %s (fullyConnected=%v)", e.Nick, newNick, irc.fullyConnected)
 				}
 			}
 		}
@@ -455,6 +496,8 @@ func (irc *Connection) setupCallbacks() {
 		irc.nickcurrent = e.Arguments[0]
 		// Also update the desired nickname to match what the server confirmed
 		irc.nick = e.Arguments[0]
+		irc.nickPending = ""
+		irc.nickChangeInProgress = false
 		// Mark the connection as fully established
 		irc.fullyConnected = true
 		// Update the last nickname change time
@@ -575,12 +618,26 @@ func (irc *Connection) setupCallbacks() {
 }
 
 // modifyNick modifies the current nickname to try a different one.
+// DEPRECATED: This function is kept for backward compatibility but should not be used.
+// Use generateAlternativeNick instead.
 func (irc *Connection) modifyNick() {
 	if len(irc.nickcurrent) > 8 {
 		irc.nickcurrent = "_" + irc.nickcurrent
 	} else {
 		irc.nickcurrent = irc.nickcurrent + "_"
 	}
+}
+
+// generateAlternativeNick creates an alternative nickname based on the given base nickname.
+// RFC 2812 doesn't specify how to handle nickname collisions, so we use a simple strategy:
+// - If the nickname is longer than 8 characters, prepend an underscore
+// - Otherwise, append an underscore
+// This function does not modify any connection state.
+func generateAlternativeNick(baseNick string) string {
+	if len(baseNick) > 8 {
+		return "_" + baseNick
+	}
+	return baseNick + "_"
 }
 
 // DCC chat support

@@ -64,7 +64,8 @@ type Connection struct {
 	pwrite                 chan string
 	end                    chan struct{}
 	nick                   string // The nickname we want.
-	nickcurrent            string // The nickname we currently have.
+	nickcurrent            string // The nickname we currently have (confirmed by server).
+	nickPending            string // The nickname currently pending confirmation from the server.
 	user                   string
 	events                 map[string]map[int]func(*Event)
 	eventsMutex            sync.Mutex
