@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.2"
+	VERSION = "go-ircevo v1.2.3"
 )
 
 const CAP_TIMEOUT = time.Second * 15

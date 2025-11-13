@@ -742,7 +742,7 @@ Identifies a specific callback for management.
 ## Constants
 
 ```go
-const VERSION = "go-ircevo v1.2.2"
+const VERSION = "go-ircevo v1.2.3"
 ```
 
 Library version string.
