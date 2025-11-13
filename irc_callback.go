@@ -643,12 +643,38 @@ func generateAlternativeNick(baseNick string) string {
 // DCC chat support
 func (irc *Connection) addDCCChatCallback() {
 	irc.AddCallback("CTCP_DCC", func(e *Event) {
-		if len(e.Arguments) < 5 || e.Arguments[1] != "CHAT" {
+		// Validate we have enough arguments
+		if len(e.Arguments) < 5 {
+			if irc.Debug {
+				irc.Log.Printf("DCC: Invalid number of arguments: %d", len(e.Arguments))
+			}
 			return
 		}
+
+		// Validate this is a CHAT request
+		if e.Arguments[1] != "CHAT" {
+			return
+		}
+
 		nick := e.Nick
+
+		// Validate and parse IP address
 		ip := net.ParseIP(e.Arguments[3])
-		port, _ := strconv.Atoi(e.Arguments[4])
+		if ip == nil {
+			if irc.Debug {
+				irc.Log.Printf("DCC: Invalid IP address format: %s", e.Arguments[3])
+			}
+			return
+		}
+
+		// Validate and parse port number
+		port, err := strconv.Atoi(e.Arguments[4])
+		if err != nil || port < 1 || port > 65535 {
+			if irc.Debug {
+				irc.Log.Printf("DCC: Invalid port number: %s (error: %v)", e.Arguments[4], err)
+			}
+			return
+		}
 
 		go irc.handleIncomingDCCChat(nick, ip, port)
 	})

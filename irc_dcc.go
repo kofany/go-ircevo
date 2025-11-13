@@ -175,10 +175,17 @@ func (irc *Connection) getLocalIP() net.IP {
 }
 
 func ip2int(ip net.IP) uint32 {
+	// Convert to 4-byte representation if IPv4
+	ip4 := ip.To4()
+	if ip4 != nil {
+		return binary.BigEndian.Uint32(ip4)
+	}
+	// For IPv6, try to extract IPv4-mapped address
 	if len(ip) == 16 {
 		return binary.BigEndian.Uint32(ip[12:16])
 	}
-	return binary.BigEndian.Uint32(ip)
+	// Fallback for invalid IP
+	return 0
 }
 func (irc *Connection) SendDCCMessage(nick, message string) error {
 	irc.DCCManager.mutex.Lock()
@@ -222,16 +229,20 @@ func (irc *Connection) GetDCCMessage(nick string) (string, error) {
 // CloseDCCChat zamyka połączenie DCC CHAT z określonym nickiem
 func (irc *Connection) CloseDCCChat(nick string) error {
 	irc.DCCManager.mutex.Lock()
-	defer irc.DCCManager.mutex.Unlock()
-
 	chat, exists := irc.DCCManager.chats[nick]
 	if !exists {
+		irc.DCCManager.mutex.Unlock()
 		return fmt.Errorf("no active DCC chat with %s", nick)
 	}
-
-	close(chat.Outgoing)
-	chat.Conn.Close()
+	// Remove from map first to prevent new sends to this chat
 	delete(irc.DCCManager.chats, nick)
+	irc.DCCManager.mutex.Unlock()
+
+	// Close connection and channels after removing from map
+	// This prevents race condition where SendDCCMessage tries to send
+	// to a closed channel
+	chat.Conn.Close()
+	close(chat.Outgoing)
 	return nil
 }
 

@@ -174,7 +174,9 @@ func parseToEvent(msg string) (*Event, error) {
 	msg = strings.TrimSuffix(msg, "\n") // Remove \r\n
 	msg = strings.TrimSuffix(msg, "\r")
 	event := &Event{Raw: msg}
-	if len(msg) < 5 {
+	// Minimum valid IRC message is a single command (e.g., "PING")
+	// Changed from 5 to 1 to support all valid IRC messages
+	if len(msg) < 1 {
 		return nil, errors.New("malformed msg from server")
 	}
 
@@ -1134,8 +1136,9 @@ func AnalyzeErrorMessage(errorMsg string) ErrorType {
 		}
 	}
 
-	// Default to recoverable for unknown errors
-	return PermanentError
+	// Default to recoverable for unknown errors (allow reconnection attempts)
+	// Unknown errors are more likely to be temporary than permanent
+	return RecoverableError
 }
 
 // IsFullyConnected returns whether the connection is fully established with the IRC server.
