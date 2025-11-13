@@ -19,10 +19,25 @@ A robust, production-ready IRC client library for Go 1.23+ with advanced feature
 - **🎯 Event System** - Flexible callback-based event handling
 - **🔧 IRCv3** - CAP negotiation, message tags, SASL authentication
 
+## 🆕 What's New in v1.2.3
+
+**Security & RFC Compliance Release** - Critical fixes and improvements:
+
+- 🔒 **Security**: Fixed DCC CHAT IPv4/IPv6 conversion bug and added comprehensive input validation
+- 🔒 **Concurrency**: Resolved race condition in DCC chat closure
+- ✅ **RFC Compliance**: Improved IRC message parser to accept all valid messages
+- 🛡️ **Error Handling**: Better fault tolerance with improved error classification
+
+See [SECURITY_AUDIT_2025-11-13.md](SECURITY_AUDIT_2025-11-13.md) for detailed information.
+
 ## 📦 Installation
 
 ```bash
+# Latest version
 go get github.com/kofany/go-ircevo
+
+# Specific version (recommended for production)
+go get github.com/kofany/go-ircevo@v1.2.3
 ```
 
 **Requirements:** Go 1.23 or higher
