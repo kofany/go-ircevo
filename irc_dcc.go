@@ -1,7 +1,5 @@
-// Copyright (c) 2024 Jerzy Dąbrowski
-// Based on original work by Thomas Jager, 2009. All rights reserved.
+// Copyright (c) 2024 Jerzy Dąbrowski. All rights reserved.
 //
-// This project is a fork of the original go-ircevent library created by Thomas Jager.
 // Redistribution and use in source and binary forms, with or without modification, are permitted provided
 // that the following conditions are met:
 //
@@ -17,6 +15,7 @@
 // IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
 // WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 package irc
 
 import (

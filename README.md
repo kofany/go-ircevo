@@ -5,6 +5,16 @@
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kofany/go-ircevo)](go.mod)
 
+> **Fork of [go-ircevent](https://github.com/thoj/go-ircevent) by Thomas Jager**
+
+## Credits
+
+- **Original Author**: Thomas Jager ([go-ircevent](https://github.com/thoj/go-ircevent), 2009)
+- **Current Maintainer**: Jerzy Dąbrowski
+- **Contributors**: See [GitHub Contributors](https://github.com/kofany/go-ircevo/graphs/contributors)
+
+---
+
 A robust, production-ready IRC client library for Go 1.23+ with advanced features optimized for mass deployments.
 
 ## ✨ Features
@@ -247,14 +257,6 @@ Contributions are welcome! Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) f
 ## 📝 License
 
 This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
-
-Based on original work from [go-ircevent](https://github.com/thoj/go-ircevent) by Thomas Jager.
-
-## 🙏 Credits
-
-- **Original Author**: Thomas Jager (go-ircevent)
-- **Current Maintainer**: Jerzy Dąbrowski
-- **Contributors**: See [GitHub Contributors](https://github.com/kofany/go-ircevo/graphs/contributors)
 
 ## 📞 Support
 

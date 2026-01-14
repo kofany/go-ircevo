@@ -1,5 +1,5 @@
-// Copyright (c) 2024 Jerzy Dąbrowski
-// Based on original work by Thomas Jager, 2009. All rights reserved.
+// Copyright (c) 2009 Thomas Jager. All rights reserved.
+// Copyright (c) 2024 Jerzy Dąbrowski. All rights reserved.
 //
 // This project is a fork of the original go-ircevent library created by Thomas Jager.
 // Redistribution and use in source and binary forms, with or without modification, are permitted provided
