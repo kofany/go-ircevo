@@ -1,97 +1,121 @@
 package irc
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
-func TestNickChangeConfirmation(t *testing.T) {
-	// Create a minimal IRC connection without setting up callbacks
-	irccon := &Connection{
-		nick:           "testnick",
-		nickcurrent:    "testnick",
-		user:           "testuser",
-		lastNickChange: time.Now(),
-		nickError:      "",
+func TestNickChangeConfirmationUsesIRCCasemapping(t *testing.T) {
+	irccon := IRC("[Test]", "testuser")
+	irccon.fullyConnected = true
+	irccon.nick = "newnick"
+	irccon.nickcurrent = "[Test]"
+	irccon.nickError = "Some error"
+
+	event, err := parseToEvent(":{tESt}!testuser@host NICK newnick")
+	if err != nil {
+		t.Fatalf("parseToEvent failed: %v", err)
 	}
+	event.Connection = irccon
+	irccon.RunCallbacks(event)
 
-	// Add only the NICK callback for testing
-	irccon.events = make(map[string]map[int]func(*Event))
-	irccon.AddCallback("NICK", func(e *Event) {
-		// If this is our own nickname change
-		if e.Nick == irccon.nickcurrent {
-			// Update current nickname to the new one
-			irccon.nickcurrent = e.Message()
-			// Only update desired nickname if it matches the old one
-			if irccon.nick == e.Nick {
-				irccon.nick = e.Message()
-			}
-			// Update the last nickname change time
-			irccon.lastNickChange = time.Now()
-			// Clear any nickname error since the change was successful
-			irccon.nickError = ""
-		}
+	if irccon.nickcurrent != "newnick" {
+		t.Fatalf("expected current nick to be updated to newnick, got %q", irccon.nickcurrent)
+	}
+	if irccon.nick != "newnick" {
+		t.Fatalf("expected desired nick to stay at newnick, got %q", irccon.nick)
+	}
+	if irccon.nickError != "" {
+		t.Fatalf("expected nick error to be cleared, got %q", irccon.nickError)
+	}
+}
+
+func TestErroneousNicknameRecoveryUsesSafeAlternative(t *testing.T) {
+	irccon := IRC("123 bad nick", "testuser")
+	irccon.pwrite = make(chan string, 1)
+	irccon.nickcurrent = "123 bad nick"
+
+	irccon.RunCallbacks(&Event{
+		Code:      "432",
+		Arguments: []string{"server", "123 bad nick", "Erroneous nickname"},
 	})
 
-	// Test initial state
-	if irccon.nickcurrent != "testnick" {
-		t.Errorf("Expected current nickname to be 'testnick', got '%s'", irccon.nickcurrent)
+	alternative := generateAlternativeNick("123 bad nick")
+	if irccon.nick != alternative {
+		t.Fatalf("expected desired nick to switch to %q, got %q", alternative, irccon.nick)
 	}
-	if irccon.nick != "testnick" {
-		t.Errorf("Expected desired nickname to be 'testnick', got '%s'", irccon.nick)
+	if irccon.nickPending != alternative {
+		t.Fatalf("expected pending nick to be %q, got %q", alternative, irccon.nickPending)
 	}
-
-	// Directly update the desired nickname (what Nick() would do)
-	irccon.nick = "newnick"
-	irccon.lastNickChange = time.Now()
-
-	// Verify that only the desired nickname was updated
-	if irccon.nickcurrent != "testnick" {
-		t.Errorf("Expected current nickname to remain 'testnick', got '%s'", irccon.nickcurrent)
+	if irccon.nickcurrent != alternative {
+		t.Fatalf("expected current nick to move to %q during registration recovery, got %q", alternative, irccon.nickcurrent)
 	}
-	if irccon.nick != "newnick" {
-		t.Errorf("Expected desired nickname to be 'newnick', got '%s'", irccon.nick)
+	if !isValidRFCNick(alternative) {
+		t.Fatalf("expected alternative nick %q to be RFC-valid", alternative)
 	}
 
-	// Simulate a NICK message from the server confirming the change
-	// Format: :OLD_NICK!user@host NICK NEW_NICK
-	event, _ := parseToEvent(":testnick!testuser@host NICK newnick")
-	event.Connection = irccon
-	irccon.RunCallbacks(event)
-
-	// Verify that both nicknames were updated
-	if irccon.nickcurrent != "newnick" {
-		t.Errorf("Expected current nickname to be updated to 'newnick', got '%s'", irccon.nickcurrent)
-	}
-	if irccon.nick != "newnick" {
-		t.Errorf("Expected desired nickname to be 'newnick', got '%s'", irccon.nick)
-	}
-
-	// Test that the error field is cleared after a successful change
-	irccon.nickError = "Some error"
-	event, _ = parseToEvent(":newnick!testuser@host NICK anothernick")
-	event.Connection = irccon
-	irccon.RunCallbacks(event)
-
-	if irccon.nickError != "" {
-		t.Errorf("Expected nickname error to be cleared, got '%s'", irccon.nickError)
+	select {
+	case got := <-irccon.pwrite:
+		want := "NICK " + alternative + "\r\n"
+		if got != want {
+			t.Fatalf("expected %q, got %q", want, got)
+		}
+	default:
+		t.Fatal("expected a recovery NICK command to be sent")
 	}
 }
 
-func TestNickErrorHandling(t *testing.T) {
-	// Skip this test as it requires complex callback setup
-	// The functionality is already tested in simpler unit tests
-	t.Skip("Skipping test that requires complex callback setup")
+func TestNicknameInUseMatchingUsesIRCCasemapping(t *testing.T) {
+	irccon := IRC("[Nick]", "testuser")
+	irccon.pwrite = make(chan string, 1)
+	irccon.nickcurrent = "[Nick]"
+
+	irccon.RunCallbacks(&Event{
+		Code:      "433",
+		Arguments: []string{"server", "{nIcK}", "Nickname already in use"},
+	})
+
+	alternative := generateAlternativeNick("{nIcK}")
+	if irccon.nick != "[Nick]" {
+		t.Fatalf("expected desired nick to remain original for later retry, got %q", irccon.nick)
+	}
+	if irccon.nickPending != alternative {
+		t.Fatalf("expected pending nick to be %q, got %q", alternative, irccon.nickPending)
+	}
+	if irccon.nickcurrent != alternative {
+		t.Fatalf("expected current nick to track registration fallback %q, got %q", alternative, irccon.nickcurrent)
+	}
 }
 
-func TestPendingNickChange(t *testing.T) {
-	// Skip this test as it requires complex callback setup
-	// The functionality is already tested in simpler unit tests
-	t.Skip("Skipping test that requires complex callback setup")
+func TestRestrictedNicknameStopsFurtherRetry(t *testing.T) {
+	irccon := IRC("wanted", "testuser")
+	irccon.fullyConnected = true
+	irccon.nickcurrent = "current"
+	irccon.nick = "wanted"
+	irccon.nickPending = "wanted"
+	irccon.nickChangeInProgress = true
+
+	irccon.RunCallbacks(&Event{Code: "484", Arguments: []string{"server", "wanted", "Restricted"}})
+
+	if irccon.nick != "current" {
+		t.Fatalf("expected desired nick to fall back to current nick, got %q", irccon.nick)
+	}
+	if irccon.nickPending != "" {
+		t.Fatalf("expected pending nick to be cleared, got %q", irccon.nickPending)
+	}
+	if irccon.nickChangeInProgress {
+		t.Fatal("expected nick change retry state to be cleared")
+	}
 }
 
-func TestMultipleNickChanges(t *testing.T) {
-	// Skip this test as it requires complex callback setup
-	// The functionality is already tested in simpler unit tests
-	t.Skip("Skipping test that requires complex callback setup")
+func isValidRFCNick(nick string) bool {
+	if nick == "" || len(nick) > maxRFCNickLen {
+		return false
+	}
+	if !isRFCNickFirstChar(nick[0]) {
+		return false
+	}
+	for i := 1; i < len(nick); i++ {
+		if !isRFCNickChar(nick[i]) {
+			return false
+		}
+	}
+	return true
 }

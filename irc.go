@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.3"
+	VERSION = "go-ircevo v1.2.4"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -280,7 +280,7 @@ func (irc *Connection) pingLoop() {
 			irc.SendRawf("PING %d", time.Now().UnixNano())
 			// Check if there's a pending nickname change
 			irc.Lock()
-			if irc.nick != irc.nickcurrent {
+			if !ircNickEqual(irc.nick, irc.nickcurrent) {
 				desiredNick := irc.nick
 				irc.nickPending = desiredNick
 				irc.nickChangeInProgress = true
@@ -482,7 +482,7 @@ func (irc *Connection) Nick(n string) {
 	irc.lastNickChange = time.Now()
 
 	// Only send NICK command if it's different from current
-	if irc.nickcurrent != n {
+	if !ircNickEqual(irc.nickcurrent, n) {
 		irc.nickChangeInProgress = true
 		irc.nickChangeTimeout = time.Now()
 		irc.nickPending = n
@@ -557,7 +557,7 @@ func (irc *Connection) GetNickStatus() *NickStatus {
 		Desired:        irc.nick,
 		Confirmed:      irc.fullyConnected,
 		LastChangeTime: lastChangeTime,
-		PendingChange:  irc.nick != irc.nickcurrent,
+		PendingChange:  !ircNickEqual(irc.nick, irc.nickcurrent),
 		Error:          irc.nickError,
 	}
 }

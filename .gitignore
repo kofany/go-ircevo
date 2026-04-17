@@ -41,6 +41,7 @@ doall.sh
 all.txt
 opinia*
 log.out
+memory.db
 
 # Build artifacts
 bin/

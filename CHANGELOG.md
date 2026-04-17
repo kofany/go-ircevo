@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-04-17
+
+### Fixed
+
+- Corrected nickname tracking to use IRC RFC casemapping rules instead of plain string equality
+- Fixed `ERR_ERRONEUSNICKNAME` recovery to generate RFC-valid fallback nicknames
+- Stopped infinite retries of invalid or restricted nicknames after permanent nickname errors
+- Prevented false pending nick changes and redundant `NICK` commands for RFC-equivalent nicknames
+
+### Improved
+
+- Hardened nickname fallback generation to keep alternatives within RFC nickname syntax and length limits
+- Expanded automated tests for nickname tracking, RFC casemapping, and permanent nickname error handling
+- Added `memory.db` to `.gitignore`
+
 ## [1.2.3] - 2025-11-13
 
 ### Security
@@ -74,5 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.4]: https://github.com/kofany/go-ircevo/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/kofany/go-ircevo/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/kofany/go-ircevo/releases/tag/v1.2.2

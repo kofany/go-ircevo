@@ -267,7 +267,7 @@ func (irc *Connection) setupCallbacks() {
 			attemptedNick := e.Arguments[1]
 
 			// Check if the error is for a nick we're trying to get
-			if attemptedNick == irc.nick || attemptedNick == irc.nickPending {
+			if ircNickEqual(attemptedNick, irc.nick) || ircNickEqual(attemptedNick, irc.nickPending) {
 				// Generate alternative based on the rejected nickname
 				alternative := generateAlternativeNick(attemptedNick)
 				irc.nickPending = alternative
@@ -277,7 +277,7 @@ func (irc *Connection) setupCallbacks() {
 
 				// During initial registration (before 001), also update nickcurrent
 				// to keep track of what we're trying, since we don't have a confirmed nick yet
-				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+				if !irc.fullyConnected && ircNickEqual(irc.nickcurrent, attemptedNick) {
 					irc.nickcurrent = alternative
 				}
 
@@ -301,14 +301,14 @@ func (irc *Connection) setupCallbacks() {
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			if attemptedNick == irc.nick || attemptedNick == irc.nickPending {
+			if ircNickEqual(attemptedNick, irc.nick) || ircNickEqual(attemptedNick, irc.nickPending) {
 				alternative := generateAlternativeNick(attemptedNick)
 				irc.nickPending = alternative
 				irc.nickChangeInProgress = true
 				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
 
-				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+				if !irc.fullyConnected && ircNickEqual(irc.nickcurrent, attemptedNick) {
 					irc.nickcurrent = alternative
 				}
 
@@ -356,14 +356,16 @@ func (irc *Connection) setupCallbacks() {
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			if attemptedNick == irc.nick || attemptedNick == irc.nickPending || attemptedNick == irc.nickcurrent {
-				alternative := "Err" + attemptedNick
+			if ircNickEqual(attemptedNick, irc.nick) || ircNickEqual(attemptedNick, irc.nickPending) || ircNickEqual(attemptedNick, irc.nickcurrent) {
+				alternative := generateAlternativeNick(attemptedNick)
+				// An erroneous nickname will never succeed, so stop retrying the invalid desired nick.
+				irc.nick = alternative
 				irc.nickPending = alternative
 				irc.nickChangeInProgress = true
 				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
 
-				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+				if !irc.fullyConnected && ircNickEqual(irc.nickcurrent, attemptedNick) {
 					irc.nickcurrent = alternative
 				}
 
@@ -387,14 +389,14 @@ func (irc *Connection) setupCallbacks() {
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
 
-			if attemptedNick == irc.nick || attemptedNick == irc.nickPending {
+			if ircNickEqual(attemptedNick, irc.nick) || ircNickEqual(attemptedNick, irc.nickPending) {
 				alternative := generateAlternativeNick(attemptedNick)
 				irc.nickPending = alternative
 				irc.nickChangeInProgress = true
 				irc.nickChangeTimeout = time.Now()
 				irc.lastNickChange = time.Now()
 
-				if !irc.fullyConnected && irc.nickcurrent == attemptedNick {
+				if !irc.fullyConnected && ircNickEqual(irc.nickcurrent, attemptedNick) {
 					irc.nickcurrent = alternative
 				}
 
@@ -421,7 +423,12 @@ func (irc *Connection) setupCallbacks() {
 		if irc.Debug {
 			irc.Log.Printf("NICK 484 error: Restricted nickname (connected: %v)", irc.fullyConnected)
 		}
-		// Keep the current nickname and do not attempt to change it further
+		// A restricted nickname will not become available later, so stop retrying it.
+		irc.nickPending = ""
+		irc.nickChangeInProgress = false
+		if irc.nickcurrent != "" {
+			irc.nick = irc.nickcurrent
+		}
 	})
 
 	// Handle PONG responses
@@ -441,7 +448,7 @@ func (irc *Connection) setupCallbacks() {
 		defer irc.Unlock()
 
 		// If this is our own nickname change
-		if e.Nick == irc.nickcurrent {
+		if ircNickEqual(e.Nick, irc.nickcurrent) {
 			// Verify that the message format is correct
 			newNick := e.Message()
 			if newNick != "" {
@@ -463,7 +470,7 @@ func (irc *Connection) setupCallbacks() {
 				} else {
 					// Post-registration: only update desired nick if we got exactly what we wanted
 					// This allows pingLoop to periodically retry if we got an alternative
-					if newNick == irc.nick {
+					if ircNickEqual(newNick, irc.nick) {
 						// Success! We got the nick we wanted
 						if irc.Debug {
 							irc.Log.Printf("Successfully changed to desired nick: %s", newNick)
@@ -634,10 +641,122 @@ func (irc *Connection) modifyNick() {
 // - Otherwise, append an underscore
 // This function does not modify any connection state.
 func generateAlternativeNick(baseNick string) string {
-	if len(baseNick) > 8 {
-		return "_" + baseNick
+	baseNick = sanitizeRFCNick(baseNick)
+
+	suffixes := []string{"_", "-", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+	for _, suffix := range suffixes {
+		candidate := buildRFCNickCandidate(baseNick, suffix)
+		if candidate != "" && !ircNickEqual(candidate, baseNick) {
+			return candidate
+		}
 	}
-	return baseNick + "_"
+
+	return "Guest_"
+}
+
+const maxRFCNickLen = 9
+
+func ircNickEqual(a, b string) bool {
+	return canonicalizeRFCNick(a) == canonicalizeRFCNick(b)
+}
+
+func canonicalizeRFCNick(nick string) string {
+	var b strings.Builder
+	b.Grow(len(nick))
+
+	for i := 0; i < len(nick); i++ {
+		ch := nick[i]
+		switch ch {
+		case '[':
+			ch = '{'
+		case ']':
+			ch = '}'
+		case '\\':
+			ch = '|'
+		case '~':
+			ch = '^'
+		}
+		if ch >= 'A' && ch <= 'Z' {
+			ch += 'a' - 'A'
+		}
+		b.WriteByte(ch)
+	}
+
+	return b.String()
+}
+
+func isRFCNickFirstChar(ch byte) bool {
+	return (ch >= 'A' && ch <= 'Z') ||
+		(ch >= 'a' && ch <= 'z') ||
+		(ch >= '[' && ch <= '`') ||
+		(ch >= '{' && ch <= '}')
+}
+
+func isRFCNickChar(ch byte) bool {
+	return isRFCNickFirstChar(ch) || (ch >= '0' && ch <= '9') || ch == '-'
+}
+
+func sanitizeRFCNick(nick string) string {
+	var b strings.Builder
+	b.Grow(maxRFCNickLen)
+
+	for i := 0; i < len(nick) && b.Len() < maxRFCNickLen; i++ {
+		ch := nick[i]
+
+		if b.Len() == 0 {
+			if isRFCNickFirstChar(ch) {
+				b.WriteByte(ch)
+				continue
+			}
+			if isRFCNickChar(ch) {
+				b.WriteByte('_')
+				if b.Len() < maxRFCNickLen {
+					b.WriteByte(ch)
+				}
+			}
+			continue
+		}
+
+		if isRFCNickChar(ch) {
+			b.WriteByte(ch)
+		}
+	}
+
+	if b.Len() == 0 {
+		return "Guest"
+	}
+
+	return b.String()
+}
+
+func buildRFCNickCandidate(baseNick, suffix string) string {
+	if suffix == "" {
+		suffix = "_"
+	}
+	if len(suffix) >= maxRFCNickLen {
+		suffix = suffix[:maxRFCNickLen-1]
+	}
+
+	room := maxRFCNickLen - len(suffix)
+	if room < 1 {
+		room = 1
+		suffix = suffix[:maxRFCNickLen-1]
+	}
+
+	prefix := baseNick
+	if len(prefix) > room {
+		prefix = prefix[:room]
+	}
+
+	candidate := prefix + suffix
+	if !isRFCNickFirstChar(candidate[0]) {
+		candidate = "_" + candidate
+		if len(candidate) > maxRFCNickLen {
+			candidate = candidate[:maxRFCNickLen]
+		}
+	}
+
+	return sanitizeRFCNick(candidate)
 }
 
 // DCC chat support

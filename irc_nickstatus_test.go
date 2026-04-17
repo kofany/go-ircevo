@@ -72,3 +72,35 @@ func TestGetNickStatus(t *testing.T) {
 		t.Error("Expected last change time to be updated after nickname change")
 	}
 }
+
+func TestGetNickStatusUsesIRCCasemapping(t *testing.T) {
+	irccon := IRC("[Nick]", "testuser")
+	irccon.nickcurrent = "[Nick]"
+	irccon.nick = "{nIcK}"
+
+	status := irccon.GetNickStatus()
+	if status.PendingChange {
+		t.Fatalf("expected no pending change for RFC-equivalent nicknames, got %+v", status)
+	}
+}
+
+func TestNickDoesNotSendForEquivalentIRCNick(t *testing.T) {
+	irccon := IRC("[Nick]", "testuser")
+	irccon.pwrite = make(chan string, 1)
+	irccon.nickcurrent = "[Nick]"
+
+	irccon.Nick("{nIcK}")
+
+	select {
+	case got := <-irccon.pwrite:
+		t.Fatalf("expected no NICK command for equivalent nickname, got %q", got)
+	default:
+	}
+
+	if irccon.nickPending != "" {
+		t.Fatalf("expected no pending nick, got %q", irccon.nickPending)
+	}
+	if irccon.nickChangeInProgress {
+		t.Fatal("expected no nick change in progress")
+	}
+}
