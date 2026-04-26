@@ -506,7 +506,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.nickPending = ""
 		irc.nickChangeInProgress = false
 		// Mark the connection as fully established
-		irc.fullyConnected = true
+		irc.markFullyConnectedLocked()
 		// Update the last nickname change time
 		irc.lastNickChange = time.Now()
 		// Clear any nickname error since we're successfully connected
@@ -534,7 +534,7 @@ func (irc *Connection) setupCallbacks() {
 			irc.registrationSteps++
 		} else if irc.registrationSteps > 0 {
 			// If we're already fully connected, ensure it stays that way
-			irc.fullyConnected = true
+			irc.markFullyConnectedLocked()
 		}
 		irc.Unlock()
 	})
@@ -546,7 +546,7 @@ func (irc *Connection) setupCallbacks() {
 			irc.registrationSteps++
 		} else if irc.registrationSteps > 0 {
 			// If we're already fully connected, ensure it stays that way
-			irc.fullyConnected = true
+			irc.markFullyConnectedLocked()
 		}
 		irc.Unlock()
 	})
@@ -558,7 +558,7 @@ func (irc *Connection) setupCallbacks() {
 			irc.registrationSteps++
 		} else if irc.registrationSteps > 0 {
 			// If we're already fully connected, ensure it stays that way
-			irc.fullyConnected = true
+			irc.markFullyConnectedLocked()
 		}
 		irc.Unlock()
 	})
@@ -570,11 +570,11 @@ func (irc *Connection) setupCallbacks() {
 			irc.registrationSteps++
 			// If we've received enough registration messages, mark as fully connected
 			if irc.registrationSteps >= 4 {
-				irc.fullyConnected = true
+				irc.markFullyConnectedLocked()
 			}
 		} else if irc.registrationSteps > 0 {
 			// If we're already fully connected, ensure it stays that way
-			irc.fullyConnected = true
+			irc.markFullyConnectedLocked()
 		}
 		irc.Unlock()
 	})
@@ -584,7 +584,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.Lock()
 		// If we've started registration but aren't fully connected yet
 		if !irc.fullyConnected && irc.registrationSteps > 0 {
-			irc.fullyConnected = true
+			irc.markFullyConnectedLocked()
 		}
 		irc.Unlock()
 	})
@@ -594,7 +594,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.Lock()
 		// If we've started registration but aren't fully connected yet
 		if !irc.fullyConnected && irc.registrationSteps > 0 {
-			irc.fullyConnected = true
+			irc.markFullyConnectedLocked()
 		}
 		irc.Unlock()
 	})

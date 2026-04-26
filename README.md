@@ -29,16 +29,15 @@ A robust, production-ready IRC client library for Go 1.23+ with advanced feature
 - **🎯 Event System** - Flexible callback-based event handling
 - **🔧 IRCv3** - CAP negotiation, message tags, SASL authentication
 
-## 🆕 What's New in v1.2.3
+## 🆕 What's New in v1.2.5
 
-**Security & RFC Compliance Release** - Critical fixes and improvements:
+**Reconnect Recovery Fix** - IRC registration state is now reset correctly for automatic reconnects:
 
-- 🔒 **Security**: Fixed DCC CHAT IPv4/IPv6 conversion bug and added comprehensive input validation
-- 🔒 **Concurrency**: Resolved race condition in DCC chat closure
-- ✅ **RFC Compliance**: Improved IRC message parser to accept all valid messages
-- 🛡️ **Error Handling**: Better fault tolerance with improved error classification
+- 🔄 **Reconnects**: `NICK` and `USER` are sent again after every new connection session
+- 🧭 **Recovery Limits**: `MaxRecoverableReconnects` is reset only after IRC registration succeeds
+- 🧪 **Regression Coverage**: Added tests for reconnect registration state without requiring public IRC servers
 
-See [SECURITY_AUDIT_2025-11-13.md](SECURITY_AUDIT_2025-11-13.md) for detailed information.
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
 ## 📦 Installation
 
@@ -47,7 +46,7 @@ See [SECURITY_AUDIT_2025-11-13.md](SECURITY_AUDIT_2025-11-13.md) for detailed in
 go get github.com/kofany/go-ircevo
 
 # Specific version (recommended for production)
-go get github.com/kofany/go-ircevo@v1.2.3
+go get github.com/kofany/go-ircevo@v1.2.5
 ```
 
 **Requirements:** Go 1.23 or higher

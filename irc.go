@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.4"
+	VERSION = "go-ircevo v1.2.5"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -342,8 +342,6 @@ func (irc *Connection) Loop() {
 				time.Sleep(60 * time.Second)
 			} else {
 				errChan = irc.ErrorChan()
-				// Reset counters after successful reconnect
-				irc.recoverableReconnects = 0
 				break
 			}
 		}
@@ -594,15 +592,68 @@ func (irc *Connection) Connected() bool {
 	return !irc.stopped
 }
 
-// A disconnect sends all buffered messages (if possible),
-// stops all goroutines and then closes the socket.
-func (irc *Connection) Disconnect() {
-	irc.Lock()
+func (irc *Connection) resetRegistrationStateLocked() {
 	irc.fullyConnected = false
 	irc.registrationSteps = 0
 	irc.registrationStartTime = time.Time{}
 	irc.nickPending = ""
 	irc.nickChangeInProgress = false
+	irc.sentRegistration = false
+	irc.got020 = false
+	irc.last020 = time.Time{}
+	irc.registrationGeneration++
+}
+
+func (irc *Connection) registrationSession() uint64 {
+	irc.Lock()
+	defer irc.Unlock()
+	return irc.registrationGeneration
+}
+
+func (irc *Connection) markFullyConnectedLocked() {
+	irc.fullyConnected = true
+	irc.recoverableReconnects = 0
+}
+
+func (irc *Connection) sendRegistrationOnce(generation uint64, pwrite chan<- string) bool {
+	irc.Lock()
+	if generation != irc.registrationGeneration || irc.sentRegistration {
+		irc.Unlock()
+		return false
+	}
+
+	respectPacing := irc.Respect020Pacing && irc.got020
+	nick := irc.nick
+	user := irc.user
+	realname := irc.user
+	if irc.RealName != "" {
+		realname = irc.RealName
+	}
+	irc.sentRegistration = true
+	irc.nickPending = nick
+	irc.Unlock()
+
+	if respectPacing {
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	irc.Lock()
+	stillCurrent := generation == irc.registrationGeneration
+	irc.Unlock()
+	if !stillCurrent {
+		return false
+	}
+
+	pwrite <- "NICK " + nick + "\r\n"
+	pwrite <- "USER " + user + " 0 * :" + realname + "\r\n"
+	return true
+}
+
+// A disconnect sends all buffered messages (if possible),
+// stops all goroutines and then closes the socket.
+func (irc *Connection) Disconnect() {
+	irc.Lock()
+	irc.resetRegistrationStateLocked()
 	defer irc.Unlock()
 
 	if irc.end != nil {
@@ -625,13 +676,6 @@ func (irc *Connection) Disconnect() {
 
 // Reconnect to a server using the current connection.
 func (irc *Connection) Reconnect() error {
-	irc.Lock()
-	irc.fullyConnected = false
-	irc.registrationSteps = 0
-	irc.registrationStartTime = time.Time{}
-	irc.nickPending = ""
-	irc.nickChangeInProgress = false
-	irc.Unlock()
 	irc.end = make(chan struct{})
 	return irc.Connect(irc.Server)
 }
@@ -646,11 +690,7 @@ func (irc *Connection) Connect(server string) error {
 
 	// Reset registration status
 	irc.Lock()
-	irc.fullyConnected = false
-	irc.registrationSteps = 0
-	irc.registrationStartTime = time.Time{}
-	irc.nickPending = ""
-	irc.nickChangeInProgress = false
+	irc.resetRegistrationStateLocked()
 	irc.Unlock()
 
 	// Make sure everything is ready for connection
@@ -780,6 +820,8 @@ func (irc *Connection) SetProxy(proxyType, address, username, password string) {
 func (irc *Connection) negotiateCaps() error {
 	irc.RequestCaps = nil
 	irc.AcknowledgedCaps = nil
+	registrationGeneration := irc.registrationSession()
+	pwrite := irc.pwrite
 
 	var negotiationCallbacks []CallbackID
 	defer func() {
@@ -796,24 +838,7 @@ func (irc *Connection) negotiateCaps() error {
 
 	if len(irc.RequestCaps) == 0 {
 		// No capabilities to negotiate: send registration automatically
-		irc.Lock()
-		if !irc.sentRegistration {
-			respectPacing := irc.Respect020Pacing && irc.got020
-			realname := irc.user
-			if irc.RealName != "" {
-				realname = irc.RealName
-			}
-			irc.sentRegistration = true
-			irc.nickPending = irc.nick
-			irc.Unlock()
-			if respectPacing {
-				time.Sleep(250 * time.Millisecond)
-			}
-			irc.pwrite <- "NICK " + irc.nick + "\r\n"
-			irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
-		} else {
-			irc.Unlock()
-		}
+		irc.sendRegistrationOnce(registrationGeneration, pwrite)
 		return nil
 	}
 
@@ -831,30 +856,14 @@ func (irc *Connection) negotiateCaps() error {
 				for _, cap_name := range strings.Split(e.Arguments[2], " ") {
 					for _, req_cap := range irc.RequestCaps {
 						if cap_name == req_cap {
-							irc.pwrite <- fmt.Sprintf("CAP REQ :%s\r\n", cap_name)
+							pwrite <- fmt.Sprintf("CAP REQ :%s\r\n", cap_name)
 							missing_caps--
 						}
 					}
 				}
 			}
 			// try to send registration early once LS seen
-			irc.Lock()
-			if !irc.sentRegistration {
-				respectPacing := irc.Respect020Pacing && irc.got020
-				realname := irc.user
-				if irc.RealName != "" {
-					realname = irc.RealName
-				}
-				irc.sentRegistration = true
-				irc.Unlock()
-				if respectPacing {
-					time.Sleep(250 * time.Millisecond)
-				}
-				irc.pwrite <- "NICK " + irc.nick + "\r\n"
-				irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
-			} else {
-				irc.Unlock()
-			}
+			irc.sendRegistrationOnce(registrationGeneration, pwrite)
 
 			for i := 0; i < missing_caps; i++ {
 				cap_chan <- true
@@ -876,33 +885,16 @@ func (irc *Connection) negotiateCaps() error {
 
 	// Send CAP LS once, with configured version
 	if irc.CapVersion != "" {
-		irc.pwrite <- fmt.Sprintf("CAP LS %s\r\n", irc.CapVersion)
+		pwrite <- fmt.Sprintf("CAP LS %s\r\n", irc.CapVersion)
 	} else {
-		irc.pwrite <- "CAP LS\r\n"
+		pwrite <- "CAP LS\r\n"
 	}
 
 	// Fallback: if no CAP LS seen quickly (or handler didn't send registration),
 	// send NICK/USER automatically to avoid ping timeouts on some networks
 	go func() {
 		time.Sleep(800 * time.Millisecond)
-		irc.Lock()
-		if irc.sentRegistration {
-			irc.Unlock()
-			return
-		}
-		respectPacing := irc.Respect020Pacing && irc.got020
-		realname := irc.user
-		if irc.RealName != "" {
-			realname = irc.RealName
-		}
-		irc.sentRegistration = true
-		irc.nickPending = irc.nick
-		irc.Unlock()
-		if respectPacing {
-			time.Sleep(250 * time.Millisecond)
-		}
-		irc.pwrite <- "NICK " + irc.nick + "\r\n"
-		irc.pwrite <- "USER " + irc.user + " 0 * :" + realname + "\r\n"
+		irc.sendRegistrationOnce(registrationGeneration, pwrite)
 	}()
 
 	if irc.UseSASL {
@@ -933,7 +925,7 @@ func (irc *Connection) negotiateCaps() error {
 		remaining_caps--
 	}
 
-	irc.pwrite <- "CAP END\r\n"
+	pwrite <- "CAP END\r\n"
 
 	return nil
 }

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-04-26
+
+### Fixed
+
+- Reset per-session registration state before each new connection so automatic reconnects resend `NICK` and `USER`
+- Prevent stale CAP negotiation fallback goroutines from sending registration commands for an older connection session
+- Reset `MaxRecoverableReconnects` accounting only after IRC registration succeeds instead of after a TCP reconnect
+
 ## [1.2.4] - 2026-04-17
 
 ### Fixed
@@ -89,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.5]: https://github.com/kofany/go-ircevo/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/kofany/go-ircevo/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/kofany/go-ircevo/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/kofany/go-ircevo/releases/tag/v1.2.2

@@ -314,6 +314,98 @@ func TestReconnect(t *testing.T) {
 	}
 }
 
+func TestRegistrationIsSentAgainAfterStateReset(t *testing.T) {
+	irccon := IRC("go-reconnect", "go-reconnect")
+	irccon.pwrite = make(chan string, 4)
+
+	if err := irccon.negotiateCaps(); err != nil {
+		t.Fatalf("initial capability negotiation failed: %v", err)
+	}
+	assertRegistrationCommands(t, irccon.pwrite, "go-reconnect", "go-reconnect")
+
+	if err := irccon.negotiateCaps(); err != nil {
+		t.Fatalf("second capability negotiation failed: %v", err)
+	}
+	assertNoRegistrationCommand(t, irccon.pwrite)
+
+	irccon.Lock()
+	irccon.resetRegistrationStateLocked()
+	irccon.Unlock()
+
+	if err := irccon.negotiateCaps(); err != nil {
+		t.Fatalf("post-reset capability negotiation failed: %v", err)
+	}
+	assertRegistrationCommands(t, irccon.pwrite, "go-reconnect", "go-reconnect")
+}
+
+func TestStaleRegistrationSessionDoesNotSendRegistration(t *testing.T) {
+	irccon := IRC("go-stale", "go-stale")
+	pwrite := make(chan string, 2)
+	staleGeneration := irccon.registrationSession()
+
+	irccon.Lock()
+	irccon.resetRegistrationStateLocked()
+	irccon.Unlock()
+
+	if irccon.sendRegistrationOnce(staleGeneration, pwrite) {
+		t.Fatal("stale registration session sent NICK/USER")
+	}
+	assertNoRegistrationCommand(t, pwrite)
+}
+
+func TestRecoverableReconnectsResetAfterRegistration(t *testing.T) {
+	irccon := IRC("go-recover", "go-recover")
+	irccon.recoverableReconnects = 2
+
+	irccon.Lock()
+	irccon.resetRegistrationStateLocked()
+	irccon.Unlock()
+	if irccon.recoverableReconnects != 2 {
+		t.Fatalf("recoverableReconnects reset before registration, got %d", irccon.recoverableReconnects)
+	}
+
+	irccon.RunCallbacks(&Event{Code: "001", Arguments: []string{"go-recover", "welcome"}})
+
+	if irccon.recoverableReconnects != 0 {
+		t.Fatalf("recoverableReconnects = %d, want 0 after registration", irccon.recoverableReconnects)
+	}
+}
+
+func assertRegistrationCommands(t *testing.T, pwrite <-chan string, nick, user string) {
+	t.Helper()
+
+	wantNick := "NICK " + nick + "\r\n"
+	wantUser := "USER " + user + " 0 * :" + user + "\r\n"
+	gotNick := nextRawCommand(t, pwrite)
+	gotUser := nextRawCommand(t, pwrite)
+
+	if gotNick != wantNick || gotUser != wantUser {
+		t.Fatalf("registration commands = %q, %q; want %q, %q", gotNick, gotUser, wantNick, wantUser)
+	}
+}
+
+func assertNoRegistrationCommand(t *testing.T, pwrite <-chan string) {
+	t.Helper()
+
+	select {
+	case cmd := <-pwrite:
+		t.Fatalf("unexpected registration command: %q", cmd)
+	default:
+	}
+}
+
+func nextRawCommand(t *testing.T, pwrite <-chan string) string {
+	t.Helper()
+
+	select {
+	case cmd := <-pwrite:
+		return cmd
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for raw command")
+		return ""
+	}
+}
+
 func TestConnectionSSL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")

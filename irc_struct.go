@@ -99,6 +99,7 @@ type Connection struct {
 	got020                  bool      // internal: have we seen numeric 020
 	last020                 time.Time // internal: last time 020 was received
 	sentRegistration        bool      // internal: have we sent NICK/USER yet
+	registrationGeneration  uint64    // internal: increments for every new registration session
 
 	DCCManager              *DCCManager // DCC chat support
 	HandleErrorAsDisconnect bool        // Fix reconnection loop after ERROR event if user have own reconnect implementation
