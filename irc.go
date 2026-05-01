@@ -55,10 +55,11 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.5"
+	VERSION = "go-ircevo v1.2.6"
 )
 
 const CAP_TIMEOUT = time.Second * 15
+const DefaultCallbackTimeout = time.Second * 30
 
 var ErrDisconnected = errors.New("Disconnect Called")
 
@@ -306,6 +307,66 @@ func (irc *Connection) isQuitting() bool {
 	return irc.quit
 }
 
+func isLimitedReconnectError(errStr string) bool {
+	return strings.Contains(errStr, "RecoverableError") ||
+		strings.Contains(errStr, "ServerError")
+}
+
+func (irc *Connection) reconnectLimitReachedLocked() bool {
+	return irc.MaxRecoverableReconnects > 0 &&
+		irc.recoverableReconnects >= irc.MaxRecoverableReconnects
+}
+
+func (irc *Connection) reconnectLimitReached() bool {
+	irc.Lock()
+	defer irc.Unlock()
+	return irc.reconnectLimitReachedLocked()
+}
+
+func (irc *Connection) noteReconnectAttempt() int {
+	irc.Lock()
+	defer irc.Unlock()
+	irc.recoverableReconnects++
+	return irc.recoverableReconnects
+}
+
+func (irc *Connection) closeEndLocked() {
+	if irc.end != nil && !irc.endClosed {
+		close(irc.end)
+		irc.endClosed = true
+	}
+}
+
+func (irc *Connection) closeEnd() {
+	irc.Lock()
+	irc.closeEndLocked()
+	irc.Unlock()
+}
+
+func (irc *Connection) closeSocket() {
+	irc.Lock()
+	socket := irc.socket
+	irc.Unlock()
+	if socket != nil {
+		_ = socket.Close()
+	}
+}
+
+func (irc *Connection) closePWriteLocked() {
+	if irc.pwrite != nil && !irc.pwriteClosed {
+		close(irc.pwrite)
+		irc.pwriteClosed = true
+	}
+}
+
+// StopReconnect stops Loop from attempting any further automatic reconnects.
+func (irc *Connection) StopReconnect() {
+	irc.Lock()
+	irc.stopped = true
+	irc.quit = true
+	irc.Unlock()
+}
+
 // Main loop to control the connection.
 func (irc *Connection) Loop() {
 	errChan := irc.ErrorChan()
@@ -319,23 +380,23 @@ func (irc *Connection) Loop() {
 				irc.Log.Printf("Received permanent ERROR event, not attempting automatic reconnect.")
 				return
 			}
-			// Limit recoverable reconnection attempts if configured
-			if strings.Contains(errStr, "RecoverableError") {
-				if irc.MaxRecoverableReconnects > 0 && irc.recoverableReconnects >= irc.MaxRecoverableReconnects {
-					irc.Log.Printf("Max recoverable reconnect attempts reached (%d); stopping.", irc.MaxRecoverableReconnects)
-					return
-				}
+			// Limit configured reconnect classes if configured.
+			if isLimitedReconnectError(errStr) && irc.reconnectLimitReached() {
+				irc.Log.Printf("Max reconnect attempts reached (%d); stopping.", irc.MaxRecoverableReconnects)
+				return
 			}
 		}
-		if irc.end != nil {
-			close(irc.end)
-		}
+		irc.closeEnd()
+		irc.closeSocket()
 		irc.Wait()
 		for !irc.isQuitting() {
 			irc.Log.Printf("Error, disconnected: %s\n", err)
-			// Track recoverable reconnect attempts
-			if strings.Contains(errStr, "RecoverableError") {
-				irc.recoverableReconnects++
+			if isLimitedReconnectError(errStr) {
+				if irc.reconnectLimitReached() {
+					irc.Log.Printf("Max reconnect attempts reached (%d); stopping.", irc.MaxRecoverableReconnects)
+					return
+				}
+				irc.noteReconnectAttempt()
 			}
 			if err = irc.Reconnect(); err != nil {
 				irc.Log.Printf("Error while reconnecting: %s\n", err)
@@ -357,15 +418,12 @@ func (irc *Connection) Quit() {
 		quit = fmt.Sprintf("QUIT :%s", irc.QuitMessage)
 	}
 
-	// NEW: Add 1 second delay before sending QUIT to IRC server
-	// This helps ensure proper cleanup and reduces server-side race conditions
+	irc.StopReconnect()
+
+	// Keep the existing pacing before sending QUIT to IRC server.
 	time.Sleep(1 * time.Second)
 
 	irc.SendRaw(quit)
-	irc.Lock()
-	irc.stopped = true
-	irc.quit = true
-	irc.Unlock()
 }
 
 // Use the connection to join a given channel.
@@ -439,7 +497,14 @@ func (irc *Connection) MultiKick(users []string, channel string, msg string) {
 
 // Send raw string.
 func (irc *Connection) SendRaw(message string) {
-	irc.pwrite <- message + "\r\n"
+	pwrite := irc.pwrite
+	if pwrite == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	pwrite <- message + "\r\n"
 }
 
 // Send raw formatted string.
@@ -654,29 +719,32 @@ func (irc *Connection) sendRegistrationOnce(generation uint64, pwrite chan<- str
 func (irc *Connection) Disconnect() {
 	irc.Lock()
 	irc.resetRegistrationStateLocked()
-	defer irc.Unlock()
+	irc.closeEndLocked()
+	socket := irc.socket
+	irc.Unlock()
 
-	if irc.end != nil {
-		close(irc.end)
+	if socket != nil {
+		_ = socket.Close()
 	}
-
 	irc.Wait()
 
+	irc.Lock()
 	irc.end = nil
-
-	if irc.pwrite != nil {
-		close(irc.pwrite)
+	irc.closePWriteLocked()
+	irc.pwrite = nil
+	irc.socket = nil
+	irc.Unlock()
+	if errChan := irc.ErrorChan(); errChan != nil {
+		errChan <- ErrDisconnected
 	}
-
-	if irc.socket != nil {
-		irc.socket.Close()
-	}
-	irc.ErrorChan() <- ErrDisconnected
 }
 
 // Reconnect to a server using the current connection.
 func (irc *Connection) Reconnect() error {
+	irc.Lock()
 	irc.end = make(chan struct{})
+	irc.endClosed = false
+	irc.Unlock()
 	return irc.Connect(irc.Server)
 }
 
@@ -784,6 +852,7 @@ func (irc *Connection) Connect(server string) error {
 	irc.Log.Printf("Connected to %s (%s)\n", irc.Server, irc.socket.RemoteAddr())
 
 	irc.pwrite = make(chan string, 10)
+	irc.pwriteClosed = false
 	irc.Error = make(chan error, 10)
 	irc.Add(3)
 	go irc.readLoop()
@@ -951,6 +1020,7 @@ func IRC(nick, user string) *Connection {
 		Version:               VERSION,
 		KeepAlive:             4 * time.Minute,
 		Timeout:               1 * time.Minute,
+		CallbackTimeout:       DefaultCallbackTimeout,
 		PingFreq:              15 * time.Minute,
 		SASLMech:              "PLAIN",
 		QuitMessage:           "",

@@ -3,7 +3,10 @@ package irc
 import (
 	"crypto/tls"
 	"math/rand"
+	"net"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -371,6 +374,167 @@ func TestRecoverableReconnectsResetAfterRegistration(t *testing.T) {
 	}
 }
 
+func TestQuitLatchesStopBeforePacingDelay(t *testing.T) {
+	irccon := IRC("go-quit", "go-quit")
+	irccon.pwrite = make(chan string, 1)
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Quit()
+		close(done)
+	}()
+
+	deadline := time.After(200 * time.Millisecond)
+	for {
+		if irccon.isQuitting() {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("Quit did not latch quit state before pacing delay")
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Quit did not finish")
+	}
+
+	if got := <-irccon.pwrite; got != "QUIT\r\n" {
+		t.Fatalf("QUIT command = %q, want %q", got, "QUIT\r\n")
+	}
+}
+
+func TestDisconnectClosesSilentSocketBeforeWait(t *testing.T) {
+	addr, cleanup := startSilentServer(t)
+	defer cleanup()
+
+	irccon := IRC("go-silent", "go-silent")
+	irccon.Timeout = 50 * time.Millisecond
+	irccon.PingFreq = time.Hour
+	if err := irccon.Connect(addr); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Disconnect()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Disconnect blocked on a silent socket")
+	}
+}
+
+func TestGetNickDoesNotBlockDuringDisconnectWait(t *testing.T) {
+	irccon := IRC("go-nick", "go-nick")
+	irccon.Error = make(chan error, 1)
+	irccon.Add(1)
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Disconnect()
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	nickDone := make(chan string, 1)
+	go func() {
+		nickDone <- irccon.GetNick()
+	}()
+
+	select {
+	case got := <-nickDone:
+		if got != "go-nick" {
+			t.Fatalf("GetNick() = %q, want %q", got, "go-nick")
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("GetNick blocked while Disconnect was waiting")
+	}
+
+	irccon.Done()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Disconnect did not finish after wait group release")
+	}
+}
+
+func TestServerErrorReconnectsRespectMaxRecoverableReconnects(t *testing.T) {
+	addr, accepted, cleanup := startServerErrorServer(t)
+	defer cleanup()
+
+	irccon := IRC("go-servererr", "go-servererr")
+	irccon.MaxRecoverableReconnects = 2
+	if err := irccon.Connect(addr); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Loop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Loop did not stop after ServerError reconnect cap")
+	}
+
+	if got, wantMax := accepted.Load(), int32(3); got > wantMax {
+		t.Fatalf("accepted connections = %d, want at most %d", got, wantMax)
+	}
+}
+
+func TestStopReconnectPreventsReconnectAfterServerError(t *testing.T) {
+	addr, accepted, cleanup := startServerErrorServer(t)
+	defer cleanup()
+
+	irccon := IRC("go-stop", "go-stop")
+	var once sync.Once
+	irccon.AddCallback("ERROR", func(e *Event) {
+		once.Do(func() {
+			irccon.StopReconnect()
+		})
+	})
+
+	if err := irccon.Connect(addr); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Loop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Loop did not stop after StopReconnect")
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	if got := accepted.Load(); got != 1 {
+		t.Fatalf("accepted connections = %d, want 1", got)
+	}
+}
+
+func TestDefaultCallbackTimeoutIsBounded(t *testing.T) {
+	irccon := IRC("go-callback", "go-callback")
+	if irccon.CallbackTimeout != DefaultCallbackTimeout {
+		t.Fatalf("CallbackTimeout = %s, want %s", irccon.CallbackTimeout, DefaultCallbackTimeout)
+	}
+}
+
 func assertRegistrationCommands(t *testing.T, pwrite <-chan string, nick, user string) {
 	t.Helper()
 
@@ -460,4 +624,72 @@ func compareResults(received []int, desired ...int) bool {
 		}
 	}
 	return true
+}
+
+func startSilentServer(t *testing.T) (string, func()) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	var conns []net.Conn
+	var mu sync.Mutex
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+		}
+	}()
+
+	cleanup := func() {
+		_ = ln.Close()
+		mu.Lock()
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+		mu.Unlock()
+		<-done
+	}
+	return ln.Addr().String(), cleanup
+}
+
+func startServerErrorServer(t *testing.T) (string, *atomic.Int32, func()) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	var accepted atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			go func(conn net.Conn) {
+				_, _ = conn.Write([]byte(":server ERROR :Closing Link: x[y@z] (Too many host connections (local))\r\n"))
+				_ = conn.Close()
+			}(conn)
+		}
+	}()
+
+	cleanup := func() {
+		_ = ln.Close()
+		<-done
+	}
+	return ln.Addr().String(), &accepted, cleanup
 }

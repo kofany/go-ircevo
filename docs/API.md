@@ -90,13 +90,21 @@ func (irc *Connection) Disconnect()
 
 Disconnects from the IRC server without sending QUIT.
 
+### StopReconnect
+
+```go
+func (irc *Connection) StopReconnect()
+```
+
+Synchronously stops `Loop()` from attempting further automatic reconnects.
+
 ### Quit
 
 ```go
 func (irc *Connection) Quit()
 ```
 
-Sends QUIT message and disconnects gracefully.
+Stops automatic reconnects immediately, then sends QUIT message gracefully.
 
 **Example:**
 ```go
@@ -742,7 +750,7 @@ Identifies a specific callback for management.
 ## Constants
 
 ```go
-const VERSION = "go-ircevo v1.2.5"
+const VERSION = "go-ircevo v1.2.6"
 ```
 
 Library version string.
@@ -752,6 +760,12 @@ const CAP_TIMEOUT = time.Second * 15
 ```
 
 Timeout for CAP negotiation.
+
+```go
+const DefaultCallbackTimeout = time.Second * 30
+```
+
+Default callback execution timeout for new connections.
 
 ## Error Values
 

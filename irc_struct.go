@@ -63,6 +63,8 @@ type Connection struct {
 	socket                 net.Conn
 	pwrite                 chan string
 	end                    chan struct{}
+	endClosed              bool
+	pwriteClosed           bool
 	nick                   string // The nickname we want.
 	nickcurrent            string // The nickname we currently have (confirmed by server).
 	nickPending            string // The nickname currently pending confirmation from the server.
@@ -107,8 +109,8 @@ type Connection struct {
 	// NEW: Smart ERROR handling - analyze ERROR messages to determine if reconnect should be attempted
 	SmartErrorHandling bool // Enable intelligent ERROR message analysis (default: true)
 
-	// NEW: Limit the number of reconnection attempts after a RecoverableError
-	// 0 means unlimited attempts (default). Set to a positive value to cap retries.
+	// NEW: Limit the number of reconnection attempts after a RecoverableError or ServerError.
+	// 0 means unlimited attempts. Set to a positive value to cap retries.
 	MaxRecoverableReconnects int
 
 	// internal counter for recoverable reconnect attempts within current session

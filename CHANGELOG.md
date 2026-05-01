@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2026-05-01
+
+### Added
+
+- Added `Connection.StopReconnect()` to synchronously prevent future automatic reconnect attempts.
+- Added a bounded default callback timeout for new connections.
+
+### Fixed
+
+- Set the quit/reconnect-stop state before `Quit()` waits to send `QUIT`, removing a reconnect race window.
+- Made connection shutdown idempotent around the internal `end` channel.
+- Closed the socket before waiting in `Disconnect()` and avoided holding `irc.Lock` across `Wait()`.
+- Applied `MaxRecoverableReconnects` to `ServerError` reconnects as well as `RecoverableError`.
+- Prevented `SendRaw()` from blocking or panicking after the write channel has been closed.
+
 ## [1.2.5] - 2026-04-26
 
 ### Fixed
@@ -97,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.6]: https://github.com/kofany/go-ircevo/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/kofany/go-ircevo/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/kofany/go-ircevo/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/kofany/go-ircevo/compare/v1.2.2...v1.2.3
