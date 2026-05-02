@@ -29,14 +29,13 @@ A robust, production-ready IRC client library for Go 1.23+ with advanced feature
 - **🎯 Event System** - Flexible callback-based event handling
 - **🔧 IRCv3** - CAP negotiation, message tags, SASL authentication
 
-## 🆕 What's New in v1.2.6
+## 🆕 What's New in v1.2.7
 
-**Disconnect & Reconnect Hardening** - connection shutdown and automatic reconnects are now bounded and controllable:
+**Disconnected Event Fix** - registered `DISCONNECTED` callbacks now run when a connection is closed:
 
-- 🛑 **StopReconnect**: `Connection.StopReconnect()` synchronously stops future automatic reconnect attempts
-- ⚡ **Disconnect**: silent sockets are closed before waiting for goroutines, avoiding long mutex stalls
-- 🧭 **Recovery Limits**: `MaxRecoverableReconnects` now caps both `RecoverableError` and `ServerError` reconnects
-- ⏱️ **Callbacks**: new connections default to a bounded callback timeout
+- 🔔 **DISCONNECTED**: `Connection.AddCallback("DISCONNECTED", ...)` is emitted on manual disconnects and terminal `Loop()` exits
+- 🧩 **Compatibility**: existing handlers start working after upgrading the module, with no application code changes
+- 📉 **State Accuracy**: terminal disconnects clear the fully-connected state before callbacks run
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -47,7 +46,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 go get github.com/kofany/go-ircevo
 
 # Specific version (recommended for production)
-go get github.com/kofany/go-ircevo@v1.2.6
+go get github.com/kofany/go-ircevo@v1.2.7
 ```
 
 **Requirements:** Go 1.23 or higher

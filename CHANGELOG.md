@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2026-05-02
+
+### Added
+
+- Added `EventDisconnected` for the `DISCONNECTED` callback event code.
+
+### Fixed
+
+- Emit `DISCONNECTED` callbacks from `Disconnect()` and terminal `Loop()` exits.
+- Prevent duplicate `DISCONNECTED` callbacks within one connection lifecycle.
+- Reset disconnected-event idempotency after a successful `Connect()` or `Reconnect()`.
+- Clear `fullyConnected` before `DISCONNECTED` callbacks run.
+
 ## [1.2.6] - 2026-05-01
 
 ### Added
@@ -112,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.7]: https://github.com/kofany/go-ircevo/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/kofany/go-ircevo/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/kofany/go-ircevo/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/kofany/go-ircevo/compare/v1.2.3...v1.2.4

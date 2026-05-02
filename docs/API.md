@@ -750,7 +750,7 @@ Identifies a specific callback for management.
 ## Constants
 
 ```go
-const VERSION = "go-ircevo v1.2.6"
+const VERSION = "go-ircevo v1.2.7"
 ```
 
 Library version string.
@@ -766,6 +766,12 @@ const DefaultCallbackTimeout = time.Second * 30
 ```
 
 Default callback execution timeout for new connections.
+
+```go
+const EventDisconnected = "DISCONNECTED"
+```
+
+Event code emitted when a connection is disconnected.
 
 ## Error Values
 

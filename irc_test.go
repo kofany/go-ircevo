@@ -2,6 +2,7 @@ package irc
 
 import (
 	"crypto/tls"
+	"errors"
 	"math/rand"
 	"net"
 	"sort"
@@ -532,6 +533,129 @@ func TestDefaultCallbackTimeoutIsBounded(t *testing.T) {
 	irccon := IRC("go-callback", "go-callback")
 	if irccon.CallbackTimeout != DefaultCallbackTimeout {
 		t.Fatalf("CallbackTimeout = %s, want %s", irccon.CallbackTimeout, DefaultCallbackTimeout)
+	}
+}
+
+func TestDisconnectEmitsDisconnectedEvent(t *testing.T) {
+	irccon := IRC("go-disconnect", "go-disconnect")
+	irccon.Error = make(chan error, 2)
+
+	disconnected := make(chan string, 1)
+	irccon.AddCallback(EventDisconnected, func(e *Event) {
+		if e.Connection != irccon {
+			t.Errorf("event connection = %p, want %p", e.Connection, irccon)
+		}
+		disconnected <- e.Message()
+	})
+
+	irccon.Disconnect()
+
+	select {
+	case got := <-disconnected:
+		if got != ErrDisconnected.Error() {
+			t.Fatalf("DISCONNECTED message = %q, want %q", got, ErrDisconnected.Error())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Disconnect did not emit DISCONNECTED")
+	}
+}
+
+func TestDisconnectEmitsDisconnectedOnlyOncePerConnection(t *testing.T) {
+	irccon := IRC("go-disconnect-once", "go-disconnect-once")
+	irccon.Error = make(chan error, 4)
+
+	disconnected := make(chan struct{}, 2)
+	irccon.AddCallback(EventDisconnected, func(e *Event) {
+		disconnected <- struct{}{}
+	})
+
+	irccon.Disconnect()
+	irccon.Disconnect()
+
+	select {
+	case <-disconnected:
+	case <-time.After(time.Second):
+		t.Fatal("Disconnect did not emit DISCONNECTED")
+	}
+
+	select {
+	case <-disconnected:
+		t.Fatal("Disconnect emitted DISCONNECTED more than once")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestLoopPermanentErrorEmitsDisconnectedEvent(t *testing.T) {
+	irccon := IRC("go-loop-permanent", "go-loop-permanent")
+	irccon.Error = make(chan error, 1)
+	irccon.fullyConnected = true
+
+	disconnected := make(chan string, 1)
+	irccon.AddCallback(EventDisconnected, func(e *Event) {
+		disconnected <- e.Message()
+	})
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Loop()
+		close(done)
+	}()
+
+	irccon.Error <- errors.New("Received permanent ERROR from server: k-lined")
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Loop did not return after permanent error")
+	}
+
+	select {
+	case got := <-disconnected:
+		if got != "Received permanent ERROR from server: k-lined" {
+			t.Fatalf("DISCONNECTED message = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Loop did not emit DISCONNECTED")
+	}
+
+	if irccon.IsFullyConnected() {
+		t.Fatal("IsFullyConnected remained true after terminal Loop exit")
+	}
+}
+
+func TestLoopReconnectCapEmitsDisconnectedEvent(t *testing.T) {
+	irccon := IRC("go-loop-cap", "go-loop-cap")
+	irccon.Error = make(chan error, 1)
+	irccon.MaxRecoverableReconnects = 1
+	irccon.recoverableReconnects = 1
+
+	disconnected := make(chan string, 1)
+	irccon.AddCallback(EventDisconnected, func(e *Event) {
+		disconnected <- e.Message()
+	})
+
+	done := make(chan struct{})
+	go func() {
+		irccon.Loop()
+		close(done)
+	}()
+
+	errMsg := "Received ServerError from server: Too many host connections (local)"
+	irccon.Error <- errors.New(errMsg)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Loop did not return after reconnect cap")
+	}
+
+	select {
+	case got := <-disconnected:
+		if got != errMsg {
+			t.Fatalf("DISCONNECTED message = %q, want %q", got, errMsg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Loop reconnect cap did not emit DISCONNECTED")
 	}
 }
 

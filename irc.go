@@ -55,11 +55,12 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.6"
+	VERSION = "go-ircevo v1.2.7"
 )
 
 const CAP_TIMEOUT = time.Second * 15
 const DefaultCallbackTimeout = time.Second * 30
+const EventDisconnected = "DISCONNECTED"
 
 var ErrDisconnected = errors.New("Disconnect Called")
 
@@ -359,6 +360,32 @@ func (irc *Connection) closePWriteLocked() {
 	}
 }
 
+func (irc *Connection) emitDisconnected(reason string) {
+	irc.Lock()
+	if irc.disconnectedEmitted {
+		irc.Unlock()
+		return
+	}
+	irc.disconnectedEmitted = true
+	irc.stopped = true
+	irc.fullyConnected = false
+	irc.Unlock()
+
+	irc.RunCallbacks(&Event{
+		Code:       EventDisconnected,
+		Raw:        reason,
+		Arguments:  []string{reason},
+		Connection: irc,
+	})
+}
+
+func (irc *Connection) finishDisconnectedLoop(reason string) {
+	irc.closeEnd()
+	irc.closeSocket()
+	irc.Wait()
+	irc.emitDisconnected(reason)
+}
+
 // StopReconnect stops Loop from attempting any further automatic reconnects.
 func (irc *Connection) StopReconnect() {
 	irc.Lock()
@@ -378,11 +405,13 @@ func (irc *Connection) Loop() {
 			// Permanent errors should not reconnect
 			if strings.Contains(errStr, "Received permanent ERROR from server:") {
 				irc.Log.Printf("Received permanent ERROR event, not attempting automatic reconnect.")
+				irc.finishDisconnectedLoop(errStr)
 				return
 			}
 			// Limit configured reconnect classes if configured.
 			if isLimitedReconnectError(errStr) && irc.reconnectLimitReached() {
 				irc.Log.Printf("Max reconnect attempts reached (%d); stopping.", irc.MaxRecoverableReconnects)
+				irc.finishDisconnectedLoop(errStr)
 				return
 			}
 		}
@@ -394,6 +423,7 @@ func (irc *Connection) Loop() {
 			if isLimitedReconnectError(errStr) {
 				if irc.reconnectLimitReached() {
 					irc.Log.Printf("Max reconnect attempts reached (%d); stopping.", irc.MaxRecoverableReconnects)
+					irc.emitDisconnected(errStr)
 					return
 				}
 				irc.noteReconnectAttempt()
@@ -407,6 +437,7 @@ func (irc *Connection) Loop() {
 			}
 		}
 	}
+	irc.emitDisconnected("Connection stopped")
 }
 
 // Quit the current connection and disconnect from the server
@@ -737,6 +768,7 @@ func (irc *Connection) Disconnect() {
 	if errChan := irc.ErrorChan(); errChan != nil {
 		errChan <- ErrDisconnected
 	}
+	irc.emitDisconnected(ErrDisconnected.Error())
 }
 
 // Reconnect to a server using the current connection.
@@ -849,6 +881,9 @@ func (irc *Connection) Connect(server string) error {
 	}
 
 	irc.stopped = false
+	irc.Lock()
+	irc.disconnectedEmitted = false
+	irc.Unlock()
 	irc.Log.Printf("Connected to %s (%s)\n", irc.Server, irc.socket.RemoteAddr())
 
 	irc.pwrite = make(chan string, 10)

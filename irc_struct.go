@@ -65,6 +65,7 @@ type Connection struct {
 	end                    chan struct{}
 	endClosed              bool
 	pwriteClosed           bool
+	disconnectedEmitted    bool
 	nick                   string // The nickname we want.
 	nickcurrent            string // The nickname we currently have (confirmed by server).
 	nickPending            string // The nickname currently pending confirmation from the server.
