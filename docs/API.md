@@ -623,10 +623,11 @@ type Connection struct {
     CapVersion       string            // CAP version ("302" for CAP v3.2)
     
     // Behavior
-    QuitMessage              string    // Custom quit message
-    VerboseCallbackHandler   bool      // Verbose callback logging
-    RegistrationAfterCapEnd  bool      // Send NICK/USER after CAP END
-    Respect020Pacing         bool      // Add delay after numeric 020
+    QuitMessage                      string    // Custom quit message
+    VerboseCallbackHandler           bool      // Verbose callback logging
+    RegistrationAfterCapEnd          bool      // Send NICK/USER after CAP END
+    Respect020Pacing                 bool      // Add delay after numeric 020
+    AutoNickRecoveryPostRegistration bool      // Auto-retry alternative nick after registration
     
     // DCC
     DCCManager       *DCCManager       // DCC chat manager
@@ -750,7 +751,7 @@ Identifies a specific callback for management.
 ## Constants
 
 ```go
-const VERSION = "go-ircevo v1.2.7"
+const VERSION = "go-ircevo v1.3.0"
 ```
 
 Library version string.

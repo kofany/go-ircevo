@@ -57,6 +57,15 @@ type Connection struct {
 	Encoding         encoding.Encoding
 	ProxyConfig      *ProxyConfig
 
+	// AutoNickRecoveryPostRegistration controls whether the library
+	// auto-generates and sends an alternative nick when 432/433/436/437
+	// arrives AFTER registration (IsFullyConnected() == true). Defaults
+	// to true for backward compatibility. Set to false if your application
+	// manages nick changes itself and wants failures to leave the current
+	// nick untouched rather than producing mangled fallbacks like
+	// u_ / u__ / u___. Pre-registration recovery is unaffected.
+	AutoNickRecoveryPostRegistration bool
+
 	RealName string // The real name we want to display.
 	// If zero-value defaults to the user.
 

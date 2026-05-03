@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.2.7"
+	VERSION = "go-ircevo v1.3.0"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -1047,24 +1047,25 @@ func IRC(nick, user string) *Connection {
 	}
 
 	irc := &Connection{
-		nick:                  nick,
-		nickcurrent:           nick,
-		user:                  user,
-		Log:                   log.New(os.Stdout, "", log.LstdFlags),
-		end:                   make(chan struct{}),
-		Version:               VERSION,
-		KeepAlive:             4 * time.Minute,
-		Timeout:               1 * time.Minute,
-		CallbackTimeout:       DefaultCallbackTimeout,
-		PingFreq:              15 * time.Minute,
-		SASLMech:              "PLAIN",
-		QuitMessage:           "",
-		fullyConnected:        false,            // Initialize to false
-		lastNickChange:        time.Now(),       // Initialize to current time
-		nickError:             "",               // Initialize to empty string
-		registrationSteps:     0,                // Initialize registration steps counter
-		registrationStartTime: time.Time{},      // Zero time initially
-		registrationTimeout:   30 * time.Second, // Longer timeout for mass deployments
+		nick:                             nick,
+		nickcurrent:                      nick,
+		user:                             user,
+		Log:                              log.New(os.Stdout, "", log.LstdFlags),
+		end:                              make(chan struct{}),
+		Version:                          VERSION,
+		KeepAlive:                        4 * time.Minute,
+		Timeout:                          1 * time.Minute,
+		CallbackTimeout:                  DefaultCallbackTimeout,
+		PingFreq:                         15 * time.Minute,
+		SASLMech:                         "PLAIN",
+		QuitMessage:                      "",
+		AutoNickRecoveryPostRegistration: true,
+		fullyConnected:                   false,            // Initialize to false
+		lastNickChange:                   time.Now(),       // Initialize to current time
+		nickError:                        "",               // Initialize to empty string
+		registrationSteps:                0,                // Initialize registration steps counter
+		registrationStartTime:            time.Time{},      // Zero time initially
+		registrationTimeout:              30 * time.Second, // Longer timeout for mass deployments
 
 		// NEW: Disable timeout fallback by default to prevent ghost bots
 		EnableTimeoutFallback: false, // Disabled by default for reliability

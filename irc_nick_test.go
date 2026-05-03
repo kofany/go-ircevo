@@ -84,6 +84,74 @@ func TestNicknameInUseMatchingUsesIRCCasemapping(t *testing.T) {
 	}
 }
 
+func TestPostRegistrationNickRecoveryCanBeDisabled(t *testing.T) {
+	for _, code := range []string{"433", "437"} {
+		t.Run(code, func(t *testing.T) {
+			irccon := IRC("wanted", "testuser")
+			irccon.AutoNickRecoveryPostRegistration = false
+			irccon.fullyConnected = true
+			irccon.nickcurrent = "wanted"
+			irccon.pwrite = make(chan string, 1)
+
+			irccon.RunCallbacks(&Event{
+				Code:      code,
+				Arguments: []string{"server", "wanted", "Nick unavailable"},
+			})
+
+			select {
+			case got := <-irccon.pwrite:
+				t.Fatalf("expected no outbound NICK command, got %q", got)
+			default:
+			}
+
+			if irccon.nick != "wanted" {
+				t.Fatalf("expected desired nick to remain wanted, got %q", irccon.nick)
+			}
+			if irccon.nickcurrent != "wanted" {
+				t.Fatalf("expected current nick to remain wanted, got %q", irccon.nickcurrent)
+			}
+			if irccon.nickPending != "" {
+				t.Fatalf("expected pending nick to remain empty, got %q", irccon.nickPending)
+			}
+		})
+	}
+}
+
+func TestPreRegistrationNickRecoveryIgnoresPostRegistrationDisable(t *testing.T) {
+	for _, code := range []string{"433", "437"} {
+		t.Run(code, func(t *testing.T) {
+			irccon := IRC("wanted", "testuser")
+			irccon.AutoNickRecoveryPostRegistration = false
+			irccon.fullyConnected = false
+			irccon.nickcurrent = "wanted"
+			irccon.pwrite = make(chan string, 1)
+
+			irccon.RunCallbacks(&Event{
+				Code:      code,
+				Arguments: []string{"server", "wanted", "Nick unavailable"},
+			})
+
+			alternative := generateAlternativeNick("wanted")
+			select {
+			case got := <-irccon.pwrite:
+				want := "NICK " + alternative + "\r\n"
+				if got != want {
+					t.Fatalf("expected %q, got %q", want, got)
+				}
+			default:
+				t.Fatal("expected a recovery NICK command to be sent")
+			}
+
+			if irccon.nickPending != alternative {
+				t.Fatalf("expected pending nick to be %q, got %q", alternative, irccon.nickPending)
+			}
+			if irccon.nickcurrent != alternative {
+				t.Fatalf("expected current nick to track registration fallback %q, got %q", alternative, irccon.nickcurrent)
+			}
+		})
+	}
+}
+
 func TestRestrictedNicknameStopsFurtherRetry(t *testing.T) {
 	irccon := IRC("wanted", "testuser")
 	irccon.fullyConnected = true

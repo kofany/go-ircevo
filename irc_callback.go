@@ -261,6 +261,10 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname already in use"
 
+		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			return
+		}
+
 		// RFC 2812 Section 3.1.2: ERR_NICKNAMEINUSE indicates the nickname is already in use
 		// We need to try an alternative nickname
 		if len(e.Arguments) > 1 {
@@ -297,6 +301,10 @@ func (irc *Connection) setupCallbacks() {
 
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname temporarily unavailable"
+
+		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			return
+		}
 
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
@@ -352,6 +360,10 @@ func (irc *Connection) setupCallbacks() {
 		// Track the error regardless of connection state
 		irc.nickError = "Erroneous nickname"
 
+		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			return
+		}
+
 		// RFC 2812 Section 3.1.2: ERR_ERRONEUSNICKNAME indicates the nickname is invalid
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]
@@ -385,6 +397,10 @@ func (irc *Connection) setupCallbacks() {
 
 		// Track the error regardless of connection state
 		irc.nickError = "Nickname collision"
+
+		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			return
+		}
 
 		if len(e.Arguments) > 1 {
 			attemptedNick := e.Arguments[1]

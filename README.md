@@ -29,13 +29,13 @@ A robust, production-ready IRC client library for Go 1.23+ with advanced feature
 - **🎯 Event System** - Flexible callback-based event handling
 - **🔧 IRCv3** - CAP negotiation, message tags, SASL authentication
 
-## 🆕 What's New in v1.2.7
+## 🆕 What's New in v1.3.0
 
-**Disconnected Event Fix** - registered `DISCONNECTED` callbacks now run when a connection is closed:
+**Nick Recovery Control** - applications that manage nick changes themselves can disable automatic post-registration fallback nick generation:
 
-- 🔔 **DISCONNECTED**: `Connection.AddCallback("DISCONNECTED", ...)` is emitted on manual disconnects and terminal `Loop()` exits
-- 🧩 **Compatibility**: existing handlers start working after upgrading the module, with no application code changes
-- 📉 **State Accuracy**: terminal disconnects clear the fully-connected state before callbacks run
+- 👤 **New Field**: set `Connection.AutoNickRecoveryPostRegistration = false` to stop automatic `NICK u_`, `NICK u__`, ... retries after registration
+- 🧩 **Compatibility**: defaults to `true`, preserving existing behavior
+- ✅ **Registration Safety**: pre-001 nickname recovery is unchanged, so initial registration can still recover from collisions
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -46,7 +46,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 go get github.com/kofany/go-ircevo
 
 # Specific version (recommended for production)
-go get github.com/kofany/go-ircevo@v1.2.7
+go get github.com/kofany/go-ircevo@v1.3.0
 ```
 
 **Requirements:** Go 1.23 or higher
@@ -115,6 +115,10 @@ RFC 2812 compliant with atomic operations:
 
 ```go
 conn.Nick("newnick")
+
+// Disable automatic fallback nick generation after registration.
+// Pre-registration recovery remains enabled.
+conn.AutoNickRecoveryPostRegistration = false
 
 status := conn.GetNickStatus()
 if status.Confirmed {
