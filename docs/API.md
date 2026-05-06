@@ -751,7 +751,7 @@ Identifies a specific callback for management.
 ## Constants
 
 ```go
-const VERSION = "go-ircevo v1.3.0"
+const VERSION = "go-ircevo v1.3.1"
 ```
 
 Library version string.

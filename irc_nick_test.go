@@ -1,6 +1,10 @@
 package irc
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestNickChangeConfirmationUsesIRCCasemapping(t *testing.T) {
 	irccon := IRC("[Test]", "testuser")
@@ -84,13 +88,54 @@ func TestNicknameInUseMatchingUsesIRCCasemapping(t *testing.T) {
 	}
 }
 
+func TestPostRegistrationAlternativeNickBecomesDesired(t *testing.T) {
+	irccon := IRC("wanted", "testuser")
+	irccon.fullyConnected = true
+	irccon.nick = "wanted"
+	irccon.nickcurrent = "current"
+	irccon.pwrite = make(chan string, 1)
+
+	irccon.RunCallbacks(&Event{
+		Code:      "433",
+		Arguments: []string{"server", "wanted", "Nick unavailable"},
+	})
+
+	alternative := generateAlternativeNick("wanted")
+	select {
+	case got := <-irccon.pwrite:
+		want := "NICK " + alternative + "\r\n"
+		if got != want {
+			t.Fatalf("expected %q, got %q", want, got)
+		}
+	default:
+		t.Fatal("expected a recovery NICK command to be sent")
+	}
+
+	event, err := parseToEvent(":current!testuser@host NICK " + alternative)
+	if err != nil {
+		t.Fatalf("parseToEvent failed: %v", err)
+	}
+	event.Connection = irccon
+	irccon.RunCallbacks(event)
+
+	if irccon.nick != alternative {
+		t.Fatalf("expected desired nick to follow confirmed alternative %q, got %q", alternative, irccon.nick)
+	}
+	if irccon.nickcurrent != alternative {
+		t.Fatalf("expected current nick to be %q, got %q", alternative, irccon.nickcurrent)
+	}
+}
+
 func TestPostRegistrationNickRecoveryCanBeDisabled(t *testing.T) {
-	for _, code := range []string{"433", "437"} {
+	for _, code := range []string{"432", "433", "436", "437"} {
 		t.Run(code, func(t *testing.T) {
 			irccon := IRC("wanted", "testuser")
 			irccon.AutoNickRecoveryPostRegistration = false
 			irccon.fullyConnected = true
-			irccon.nickcurrent = "wanted"
+			irccon.nick = "wanted"
+			irccon.nickcurrent = "current"
+			irccon.nickPending = "wanted"
+			irccon.nickChangeInProgress = true
 			irccon.pwrite = make(chan string, 1)
 
 			irccon.RunCallbacks(&Event{
@@ -104,16 +149,54 @@ func TestPostRegistrationNickRecoveryCanBeDisabled(t *testing.T) {
 			default:
 			}
 
-			if irccon.nick != "wanted" {
-				t.Fatalf("expected desired nick to remain wanted, got %q", irccon.nick)
+			if irccon.nick != "current" {
+				t.Fatalf("expected desired nick to fall back to current, got %q", irccon.nick)
 			}
-			if irccon.nickcurrent != "wanted" {
-				t.Fatalf("expected current nick to remain wanted, got %q", irccon.nickcurrent)
+			if irccon.nickcurrent != "current" {
+				t.Fatalf("expected current nick to remain current, got %q", irccon.nickcurrent)
 			}
 			if irccon.nickPending != "" {
 				t.Fatalf("expected pending nick to remain empty, got %q", irccon.nickPending)
 			}
+			if irccon.nickChangeInProgress {
+				t.Fatal("expected nick change state to be cleared")
+			}
 		})
+	}
+}
+
+func TestPingLoopDoesNotRetryDesiredNick(t *testing.T) {
+	irccon := IRC("wanted", "testuser")
+	irccon.PingFreq = 5 * time.Millisecond
+	irccon.pwrite = make(chan string, 20)
+	irccon.end = make(chan struct{})
+	irccon.nick = "wanted"
+	irccon.nickcurrent = "current"
+
+	irccon.Add(1)
+	go irccon.pingLoop()
+	defer func() {
+		close(irccon.end)
+		irccon.Wait()
+	}()
+
+	gotPing := false
+	deadline := time.After(30 * time.Millisecond)
+	for {
+		select {
+		case got := <-irccon.pwrite:
+			if strings.HasPrefix(got, "NICK ") {
+				t.Fatalf("expected pingLoop not to send NICK, got %q", got)
+			}
+			if strings.HasPrefix(got, "PING ") {
+				gotPing = true
+			}
+		case <-deadline:
+			if !gotPing {
+				t.Fatal("expected pingLoop to send PING")
+			}
+			return
+		}
 	}
 }
 

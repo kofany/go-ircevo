@@ -29,12 +29,12 @@ A robust, production-ready IRC client library for Go 1.23+ with advanced feature
 - **🎯 Event System** - Flexible callback-based event handling
 - **🔧 IRCv3** - CAP negotiation, message tags, SASL authentication
 
-## 🆕 What's New in v1.3.0
+## 🆕 What's New in v1.3.1
 
-**Nick Recovery Control** - applications that manage nick changes themselves can disable automatic post-registration fallback nick generation:
+**Nick Retry Fixes** - keepalive no longer retries nickname changes from the ping loop:
 
-- 👤 **New Field**: set `Connection.AutoNickRecoveryPostRegistration = false` to stop automatic `NICK u_`, `NICK u__`, ... retries after registration
-- 🧩 **Compatibility**: defaults to `true`, preserving existing behavior
+- 👤 **Controlled Recovery**: `Connection.AutoNickRecoveryPostRegistration = false` now also clears failed post-registration nick attempts back to the confirmed current nick
+- 📡 **Keepalive Safety**: `pingLoop` only sends `PING` and never retries `NICK`
 - ✅ **Registration Safety**: pre-001 nickname recovery is unchanged, so initial registration can still recover from collisions
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
@@ -46,7 +46,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 go get github.com/kofany/go-ircevo
 
 # Specific version (recommended for production)
-go get github.com/kofany/go-ircevo@v1.3.0
+go get github.com/kofany/go-ircevo@v1.3.1
 ```
 
 **Requirements:** Go 1.23 or higher

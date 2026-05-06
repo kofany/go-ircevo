@@ -55,7 +55,7 @@ import (
 )
 
 const (
-	VERSION = "go-ircevo v1.3.0"
+	VERSION = "go-ircevo v1.3.1"
 )
 
 const CAP_TIMEOUT = time.Second * 15
@@ -280,20 +280,6 @@ func (irc *Connection) pingLoop() {
 		case <-ticker2.C:
 			// Ping at the ping frequency
 			irc.SendRawf("PING %d", time.Now().UnixNano())
-			// Check if there's a pending nickname change
-			irc.Lock()
-			if !ircNickEqual(irc.nick, irc.nickcurrent) {
-				desiredNick := irc.nick
-				irc.nickPending = desiredNick
-				irc.nickChangeInProgress = true
-				irc.nickChangeTimeout = time.Now()
-				irc.Unlock()
-				// Send a NICK command to try to change to the desired nickname
-				// The actual change will only happen when the server confirms it
-				irc.SendRawf("NICK %s", desiredNick)
-				irc.Lock()
-			}
-			irc.Unlock()
 		case <-irc.end:
 			ticker.Stop()
 			ticker2.Stop()
@@ -559,7 +545,7 @@ func (irc *Connection) Nick(n string) {
 
 	// ENHANCED: Prevent multiple simultaneous nick changes (race condition fix)
 	if irc.nickChangeInProgress && time.Since(irc.nickChangeTimeout) < 30*time.Second {
-		// Update desired nickname so the pingLoop can retry once the current change completes
+		// Record the latest requested nickname while the current change completes.
 		irc.nick = n
 		irc.nickPending = n
 		irc.lastNickChange = time.Now()

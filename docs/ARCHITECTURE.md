@@ -35,7 +35,7 @@ Each active connection runs three primary goroutines:
 
 1. **readLoop** - Reads from socket, parses messages into `Event`, dispatches callbacks
 2. **writeLoop** - Consumes outbound message channel and writes to socket
-3. **pingLoop** - Sends periodic PING and manages nickname resynchronization
+3. **pingLoop** - Sends periodic PING keepalive messages
 
 These goroutines communicate via:
 

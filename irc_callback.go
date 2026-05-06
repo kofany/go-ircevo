@@ -262,6 +262,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.nickError = "Nickname already in use"
 
 		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			irc.stopNickRetryLocked()
 			return
 		}
 
@@ -303,6 +304,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.nickError = "Nickname temporarily unavailable"
 
 		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			irc.stopNickRetryLocked()
 			return
 		}
 
@@ -361,6 +363,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.nickError = "Erroneous nickname"
 
 		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			irc.stopNickRetryLocked()
 			return
 		}
 
@@ -399,6 +402,7 @@ func (irc *Connection) setupCallbacks() {
 		irc.nickError = "Nickname collision"
 
 		if irc.fullyConnected && !irc.AutoNickRecoveryPostRegistration {
+			irc.stopNickRetryLocked()
 			return
 		}
 
@@ -475,29 +479,12 @@ func (irc *Connection) setupCallbacks() {
 				irc.nickChangeInProgress = false
 				irc.nickPending = ""
 
-				// RFC COMPLIANT: Only update desired nick during initial registration (before 001)
-				// For post-registration changes, keep the desired nick so pingLoop can retry
-				// The 001 handler will update both nick and nickcurrent during initial registration
-				// This allows the pingLoop to automatically retry the desired nickname if we
-				// had to accept an alternative due to errors (e.g., nick collision)
-				if !irc.fullyConnected {
-					// During initial registration, accept whatever nick we get
-					irc.nick = newNick
-				} else {
-					// Post-registration: only update desired nick if we got exactly what we wanted
-					// This allows pingLoop to periodically retry if we got an alternative
-					if ircNickEqual(newNick, irc.nick) {
-						// Success! We got the nick we wanted
-						if irc.Debug {
-							irc.Log.Printf("Successfully changed to desired nick: %s", newNick)
-						}
-					} else {
-						// We got an alternative (due to error recovery), keep retrying desired nick
-						if irc.Debug {
-							irc.Log.Printf("Got alternative nick %s, will keep retrying desired nick %s", newNick, irc.nick)
-						}
-					}
+				if irc.Debug && ircNickEqual(newNick, irc.nick) {
+					irc.Log.Printf("Successfully changed to desired nick: %s", newNick)
 				}
+				// Server confirmation is authoritative. Keep local desired state aligned
+				// with the nick the connection actually has.
+				irc.nick = newNick
 
 				// Update the last nickname change time
 				irc.lastNickChange = time.Now()
@@ -648,6 +635,14 @@ func (irc *Connection) modifyNick() {
 		irc.nickcurrent = "_" + irc.nickcurrent
 	} else {
 		irc.nickcurrent = irc.nickcurrent + "_"
+	}
+}
+
+func (irc *Connection) stopNickRetryLocked() {
+	irc.nickPending = ""
+	irc.nickChangeInProgress = false
+	if irc.nickcurrent != "" {
+		irc.nick = irc.nickcurrent
 	}
 }
 

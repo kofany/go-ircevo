@@ -38,7 +38,7 @@ This document provides a comprehensive audit of the IRC library's nickname track
 
 **Location:** `irc_callback.go` line 436 (NICK callback)
 
-**Issue:** The NICK callback was unconditionally updating `irc.nick` (desired nickname) to match the confirmed nickname. This broke the automatic retry mechanism for desired nicknames.
+**Issue:** The NICK callback and ping loop used to mix confirmed nickname state with retry policy. The ping loop must not send `NICK`; server-driven callbacks and explicit `Nick()` calls own nickname changes.
 
 **Scenario:**
 ```
@@ -48,27 +48,17 @@ This document provides a comprehensive audit of the IRC library's nickname track
 2. Server responds with 433 (nick in use)
 3. Library tries "alice_" (alternative)
 4. Server confirms with `:bob NICK :alice_`
-5. NICK callback updates BOTH:
-   - nickcurrent = "alice_" ✓ CORRECT
-   - nick = "alice_" ✗ BUG!
-6. Now nick == nickcurrent, so pingLoop never retries "alice"
+5. NICK callback updates local state to the server-confirmed nick:
+   - nickcurrent = "alice_"
+   - nick = "alice_"
+6. pingLoop keeps sending only PING and never retries NICK
 ```
 
-**Fix:** Modified NICK callback to only update `irc.nick` during initial registration (before 001). For post-registration changes, the desired nick is preserved so pingLoop can automatically retry.
+**Fix:** Keep `pingLoop` as a keepalive-only loop. Successful self `NICK` events align local desired/current state with the server-confirmed nickname, and failed post-registration nick attempts are cleared to the current nick when `AutoNickRecoveryPostRegistration` is disabled.
 
 ```go
-// RFC COMPLIANT: Only update desired nick during initial registration (before 001)
-if !irc.fullyConnected {
-    // During initial registration, accept whatever nick we get
-    irc.nick = newNick
-} else {
-    // Post-registration: only update desired nick if we got exactly what we wanted
-    if newNick == irc.nick {
-        // Success! We got the nick we wanted
-    } else {
-        // We got an alternative (due to error recovery), keep retrying desired nick
-    }
-}
+irc.nickcurrent = newNick
+irc.nick = newNick
 ```
 
 ### 2. **CRITICAL: Error Handler State Corruption**
@@ -206,25 +196,22 @@ The library now properly implements a three-state nick tracking system:
    - Receive `:oldnick NICK :newnick`
    - Update nickcurrent = newnick
    - Clear nickPending
-   - If newnick != nick, pingLoop will periodically retry desired nick
+   - Align nick to newnick
 ```
 
-### Automatic Retry Mechanism
+### Keepalive Behavior
 
-The `pingLoop` function now properly supports automatic retry of desired nicknames:
+The `pingLoop` function is intentionally limited to keepalive traffic:
 
 ```go
 // In pingLoop, every PingFreq interval:
-if irc.nick != irc.nickcurrent {
-    // We don't have our desired nick, try to get it
-    irc.SendRawf("NICK %s", irc.nick)
-}
+irc.SendRawf("PING %d", time.Now().UnixNano())
 ```
 
 This allows the library to:
 - Accept alternatives during error recovery
-- Keep track of the user's desired nickname
-- Periodically retry to reclaim the desired nickname if it becomes available
+- Keep local nickname state aligned with server confirmations
+- Avoid retrying failed nickname changes from keepalive code
 
 ## Testing
 
